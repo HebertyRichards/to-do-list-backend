@@ -1,0 +1,37 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - internal
+
+  backend:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - redis
+    networks:
+      - internal
+      - public
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ../to-do-list
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: ../to-do-list/.env
+    depends_on:
+      - backend
+    networks:
+      - public
+    ports:
+      - "3000:3000"
+
+networks:
+  internal:
+    driver: bridge
+  public:
+    driver: bridge

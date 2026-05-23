@@ -1,0 +1,261 @@
+import json
+from datetime import datetime, timedelta, timezone
+from fastapi import Depends
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.config.database import get_db
+from app.config.redis_client import get_redis
+from app.errors import AppException, ErrorCode
+from app.models import Group, GroupMember, JoinRequest, Notification, Subtask, Task, User
+from app.models.group_member import GroupRole
+from app.models.join_request import JoinRequestStatus
+from app.models.notification import NotificationType
+from app.repositories.group_repository import GroupRepository
+from app.repositories.notification_repository import NotificationRepository
+from app.repositories.user_repository import UserRepository
+from app.ws.manager import notification_manager
+from app.schemas.group_schemas import (
+    GroupCreate,
+    GroupCreated,
+    GroupMemberOut,
+    GroupOut,
+    JoinGroupInput,
+    JoinRequestOut,
+)
+from app.utils.security import generate_group_key, hash_group_key, verify_group_key
+
+JOIN_REQUEST_TTL_DAYS = 3
+
+
+class GroupService:
+    def __init__(self, db: AsyncSession = Depends(get_db)):
+        self.db = db
+        self.repo = GroupRepository(db)
+        self.notifs = NotificationRepository(db)
+
+    async def create_group(self, user: User, data: GroupCreate) -> GroupCreated:
+        raw_key = generate_group_key()
+        group = Group(
+            name=data.name,
+            description=data.description,
+            key_hash=hash_group_key(raw_key),
+            admin_user_id=user.id,
+        )
+        group = await self.repo.create_group(group)
+
+        admin_member = GroupMember(group_id=group.id, user_id=user.id, role=GroupRole.admin)
+        await self.repo.create_member(admin_member)
+        await self.db.commit()
+
+        return GroupCreated(
+            id=group.id,
+            name=group.name,
+            description=group.description,
+            admin_user_id=group.admin_user_id,
+            key=raw_key,
+        )
+
+    async def request_join(self, user: User, data: JoinGroupInput) -> dict:
+        key_hash = hash_group_key(data.key)
+        group = await self.repo.get_by_key_hash(key_hash)
+        if not group:
+            raise AppException(ErrorCode.INVALID_GROUP_KEY)
+
+        existing_member = await self.repo.get_member(group.id, user.id)
+        if existing_member:
+            raise AppException(ErrorCode.ALREADY_GROUP_MEMBER)
+
+        pending = await self.repo.get_pending_request(group.id, user.id)
+        if pending:
+            raise AppException(ErrorCode.JOIN_REQUEST_ALREADY_PENDING)
+
+        expires_at = datetime.now(timezone.utc) + timedelta(days=JOIN_REQUEST_TTL_DAYS)
+        req = JoinRequest(
+            group_id=group.id,
+            user_id=user.id,
+            status=JoinRequestStatus.pending,
+            expires_at=expires_at,
+        )
+        req = await self.repo.create_join_request(req)
+
+        redis = await get_redis()
+        redis_key = f"join_request:{req.id}"
+        await redis.setex(redis_key, JOIN_REQUEST_TTL_DAYS * 86400, json.dumps({"request_id": req.id}))
+
+        notif = Notification(
+            user_id=group.admin_user_id,
+            type=NotificationType.join_request_created,
+            title=f"{user.username} quer entrar em {group.name}",
+            payload={"request_id": req.id, "group_id": group.id, "username": user.username},
+        )
+        notif = await self.notifs.create(notif)
+        await self.db.commit()
+
+        await notification_manager.push(group.admin_user_id, {
+            "type": "join_request_created",
+            "request_id": req.id,
+            "group_id": group.id,
+            "username": user.username,
+        })
+
+        return {"message": "Solicitacao enviada. Aguarde aprovacao do administrador."}
+
+    async def resolve_join_request(
+        self, admin: User, group_id: int, request_id: int, accept: bool
+    ) -> dict:
+        group = await self.repo.get_by_id(group_id)
+        if not group:
+            raise AppException(ErrorCode.GROUP_NOT_FOUND)
+        if group.admin_user_id != admin.id:
+            raise AppException(ErrorCode.NOT_GROUP_ADMIN)
+
+        reqs = await self.repo.list_pending_requests(group_id)
+        req = next((r for r in reqs if r.id == request_id), None)
+        if not req:
+            raise AppException(ErrorCode.JOIN_REQUEST_NOT_FOUND)
+
+        now = datetime.now(timezone.utc)
+        if req.expires_at.replace(tzinfo=timezone.utc) < now:
+            req.status = JoinRequestStatus.expired
+            req.resolved_at = now
+            await self.db.commit()
+            raise AppException(ErrorCode.JOIN_REQUEST_EXPIRED)
+
+        req.status = JoinRequestStatus.accepted if accept else JoinRequestStatus.rejected
+        req.resolved_at = now
+
+        notif_type = NotificationType.join_request_accepted if accept else NotificationType.join_request_rejected
+        notif_title = f"Sua solicitacao para {group.name} foi {'aceita' if accept else 'recusada'}."
+
+        if accept:
+            member = GroupMember(group_id=group_id, user_id=req.user_id, role=GroupRole.member)
+            await self.repo.create_member(member)
+
+        notif = Notification(
+            user_id=req.user_id,
+            type=notif_type,
+            title=notif_title,
+            payload={"group_id": group_id, "group_name": group.name},
+        )
+        await self.notifs.create(notif)
+        await self.db.commit()
+
+        await notification_manager.push(req.user_id, {
+            "type": notif_type.value,
+            "group_id": group_id,
+            "group_name": group.name,
+        })
+
+        return {"accepted": accept}
+
+    async def list_members(self, user: User, group_id: int) -> list[GroupMemberOut]:
+        if not await self.repo.get_member(group_id, user.id):
+            raise AppException(ErrorCode.NOT_GROUP_MEMBER)
+        members = await self.repo.list_members(group_id)
+        return [
+            GroupMemberOut(
+                user_id=m.user_id,
+                username=m.user.username,
+                role=m.role,
+                joined_at=m.joined_at,
+            )
+            for m in members
+        ]
+
+    async def list_pending_requests(self, admin: User, group_id: int) -> list[JoinRequestOut]:
+        group = await self.repo.get_by_id(group_id)
+        if not group:
+            raise AppException(ErrorCode.GROUP_NOT_FOUND)
+        if group.admin_user_id != admin.id:
+            raise AppException(ErrorCode.NOT_GROUP_ADMIN)
+
+        reqs = await self.repo.list_pending_requests(group_id)
+        user_repo = UserRepository(self.db)
+        result = []
+        for r in reqs:
+            u = await user_repo.get_by_id(r.user_id)
+            result.append(JoinRequestOut(
+                id=r.id,
+                group_id=r.group_id,
+                user_id=r.user_id,
+                username=u.username if u else "?",
+                status=r.status,
+                expires_at=r.expires_at,
+                created_at=r.created_at,
+            ))
+        return result
+
+    async def remove_member(self, admin: User, group_id: int, target_user_id: int) -> None:
+        group = await self.repo.get_by_id(group_id)
+        if not group:
+            raise AppException(ErrorCode.GROUP_NOT_FOUND)
+        if group.admin_user_id != admin.id:
+            raise AppException(ErrorCode.NOT_GROUP_ADMIN)
+
+        member = await self.repo.get_member(group_id, target_user_id)
+        if not member:
+            raise AppException(ErrorCode.NOT_GROUP_MEMBER)
+
+        await self._delete_user_tasks_in_group(target_user_id, group_id)
+        await self.repo.remove_member(member)
+
+        notif = Notification(
+            user_id=target_user_id,
+            type=NotificationType.member_removed,
+            title=f"Voce foi removido do grupo {group.name}.",
+            payload={"group_id": group_id, "group_name": group.name},
+        )
+        await self.notifs.create(notif)
+        await self.db.commit()
+
+        await notification_manager.push(target_user_id, {
+            "type": "member_removed",
+            "group_id": group_id,
+            "group_name": group.name,
+        })
+
+    async def leave_group(self, user: User, group_id: int) -> None:
+        group = await self.repo.get_by_id(group_id)
+        if not group:
+            raise AppException(ErrorCode.GROUP_NOT_FOUND)
+        if group.admin_user_id == user.id:
+            raise AppException(ErrorCode.FORBIDDEN, "Admin deve excluir o grupo, nao sair.")
+
+        member = await self.repo.get_member(group_id, user.id)
+        if not member:
+            raise AppException(ErrorCode.NOT_GROUP_MEMBER)
+
+        await self._delete_user_tasks_in_group(user.id, group_id)
+        await self.repo.remove_member(member)
+        await self.db.commit()
+
+    async def delete_group(self, admin: User, group_id: int) -> None:
+        group = await self.repo.get_by_id(group_id)
+        if not group:
+            raise AppException(ErrorCode.GROUP_NOT_FOUND)
+        if group.admin_user_id != admin.id:
+            raise AppException(ErrorCode.NOT_GROUP_ADMIN)
+
+        members = await self.repo.list_members(group_id)
+        member_ids = [m.user_id for m in members if m.user_id != admin.id]
+
+        await self.repo.delete_group(group)
+        await self.db.commit()
+
+        for uid in member_ids:
+            await notification_manager.push(uid, {
+                "type": "group_deleted",
+                "group_id": group_id,
+                "group_name": group.name,
+            })
+
+    async def _delete_user_tasks_in_group(self, user_id: int, group_id: int) -> None:
+        user_task_ids_subq = (
+            select(Task.id)
+            .where(Task.group_id == group_id, Task.creator_user_id == user_id)
+            .scalar_subquery()
+        )
+        await self.db.execute(delete(Subtask).where(Subtask.task_id.in_(user_task_ids_subq)))
+        await self.db.execute(
+            delete(Task).where(Task.group_id == group_id, Task.creator_user_id == user_id)
+        )
