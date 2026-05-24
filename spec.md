@@ -1,0 +1,3 @@
+- ajuste para que nao armazene refresh token em accouts ele deve ser renovado automaticamente e nao armazenasdo mas manter os 30 dias fixos
+- porque ao criar categoria no to do list nao aparece a categoria da erro mas no bacno e criado? analise
+- porque ao criar grupo nao sou redirecionado para o grupo, ajuste tambem para ter tab de meus grupos do lado de grupo caso eu ter ou possuii grupo ou star em grupos

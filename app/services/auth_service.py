@@ -5,15 +5,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.database import get_db
 from app.config.settings import get_settings
 from app.errors import AppException, ErrorCode
-from app.models import RefreshToken, User
-from app.repositories.refresh_token_repository import RefreshTokenRepository
+from app.models import User
 from app.repositories.user_repository import UserRepository
+from app.config.redis_client import get_redis
 from app.schemas.auth_schemas import (
     CurrentUser,
+    ForgotPasswordInput,
+    ForgotPasswordResponse,
     LoginInput,
     RegisterInput,
+    ResetPasswordInput,
     SessionInfo,
 )
+import secrets as _secrets
 from app.utils.cookies import (
     ACCESS_COOKIE,
     clear_auth_cookies,
@@ -34,7 +38,6 @@ class AuthService:
     def __init__(self, db: AsyncSession = Depends(get_db)):
         self.db = db
         self.users = UserRepository(db)
-        self.tokens = RefreshTokenRepository(db)
         self.settings = get_settings()
 
     async def register(self, data: RegisterInput, response: Response) -> SessionInfo:
@@ -46,11 +49,11 @@ class AuthService:
         user = User(
             email=data.email,
             username=data.username,
-            full_name=data.full_name,
             hashed_password=hash_password(data.password),
         )
         user = await self.users.create(user)
-        session = await self._issue_session(user, response, session_started_at=None)
+        # Registro sempre abre sessão persistente (remember_me=True)
+        session = await self._issue_session(user, response, session_started_at=None, remember_me=True)
         await self.db.commit()
         return session
 
@@ -59,39 +62,21 @@ class AuthService:
         if not user or not verify_password(data.password, user.hashed_password):
             raise AppException(ErrorCode.INVALID_CREDENTIALS)
 
-        session = await self._issue_session(user, response, session_started_at=None)
+        session = await self._issue_session(
+            user, response, session_started_at=None, remember_me=data.remember_me
+        )
         await self.db.commit()
         return session
 
-    async def refresh(self, refresh_token: str, response: Response) -> SessionInfo:
+    async def refresh(self, refresh_token: str | None, response: Response) -> SessionInfo:
         if not refresh_token:
             raise AppException(ErrorCode.UNAUTHENTICATED)
 
         payload = decode_token(refresh_token, expected_type="refresh")
-        jti = payload.get("jti")
         sub = payload.get("sub")
-        sea = payload.get("sea")
 
-        if not jti or not sub or not sea:
+        if not sub:
             raise AppException(ErrorCode.TOKEN_INVALID)
-
-        existing = await self.tokens.get_by_jti(jti)
-        if existing is None:
-            raise AppException(ErrorCode.TOKEN_INVALID)
-
-        if existing.revoked_at is not None:
-            await self.tokens.revoke_all_for_user(existing.user_id)
-            await self.db.commit()
-            clear_auth_cookies(response)
-            raise AppException(ErrorCode.REFRESH_REUSE_DETECTED)
-
-        session_expires_at = datetime.fromtimestamp(int(sea), tz=timezone.utc)
-        now = datetime.now(timezone.utc)
-        if now >= session_expires_at:
-            await self.tokens.revoke(existing)
-            await self.db.commit()
-            clear_auth_cookies(response)
-            raise AppException(ErrorCode.SESSION_EXPIRED)
 
         user = await self.users.get_by_id(int(sub))
         if user is None:
@@ -100,11 +85,9 @@ class AuthService:
         new_session = await self._issue_session(
             user,
             response,
-            session_started_at=existing.session_started_at,
-            session_expires_at_override=session_expires_at,
-            previous_jti=jti,
+            session_started_at=None,
+            remember_me=True,
         )
-        await self.tokens.revoke(existing, replaced_by_jti=new_session.access_expires_at.isoformat())
         await self.db.commit()
         return new_session
 
@@ -124,8 +107,15 @@ class AuthService:
         if user is None:
             raise AppException(ErrorCode.UNAUTHENTICATED)
 
-        active_token = await self.tokens.get_latest_active_for_user(user_id)
-        session_expires_at = active_token.session_expires_at if active_token else access_expires_at
+        active_token = None
+        refresh_token = request.cookies.get(ACCESS_COOKIE.replace("access", "refresh"))  # REFRESH_COOKIE
+        session_expires_at = access_expires_at
+        if refresh_token:
+            try:
+                refresh_payload = decode_token(refresh_token, expected_type="refresh")
+                session_expires_at = datetime.fromtimestamp(int(refresh_payload["exp"]), tz=timezone.utc)
+            except Exception:
+                pass
 
         return SessionInfo(
             user=CurrentUser.model_validate(user),
@@ -133,18 +123,41 @@ class AuthService:
             access_expires_at=access_expires_at,
         )
 
+    async def forgot_password(self, data: ForgotPasswordInput) -> ForgotPasswordResponse:
+        user = await self.users.get_by_email(data.email)
+        if user is None:
+            return ForgotPasswordResponse(message="Se o email estiver cadastrado, voce recebera instrucoes.")
+
+        token = _secrets.token_urlsafe(32)
+        redis = await get_redis()
+        await redis.setex(f"pwd_reset:{token}", 3600, str(user.id))
+
+        return ForgotPasswordResponse(
+            message="Use o token abaixo para redefinir sua senha (valido por 1 hora).",
+            reset_token=token,
+        )
+
+    async def reset_password(self, data: ResetPasswordInput, response: Response) -> None:
+        redis = await get_redis()
+        user_id_raw = await redis.get(f"pwd_reset:{data.token}")
+        if user_id_raw is None:
+            raise AppException(ErrorCode.RESET_TOKEN_INVALID)
+
+        try:
+            user_id = int(user_id_raw if isinstance(user_id_raw, str) else user_id_raw.decode())
+        except (ValueError, AttributeError):
+            raise AppException(ErrorCode.RESET_TOKEN_INVALID)
+
+        user = await self.users.get_by_id(user_id)
+        if user is None:
+            raise AppException(ErrorCode.USER_NOT_FOUND)
+
+        user.hashed_password = hash_password(data.new_password)
+        await redis.delete(f"pwd_reset:{data.token}")
+        clear_auth_cookies(response)
+        await self.db.commit()
+
     async def logout(self, refresh_token: str | None, response: Response) -> None:
-        if refresh_token:
-            try:
-                payload = decode_token(refresh_token, expected_type="refresh")
-                jti = payload.get("jti")
-                if jti:
-                    existing = await self.tokens.get_by_jti(jti)
-                    if existing and existing.revoked_at is None:
-                        await self.tokens.revoke(existing)
-                        await self.db.commit()
-            except AppException:
-                pass
         clear_auth_cookies(response)
 
     async def _issue_session(
@@ -152,36 +165,24 @@ class AuthService:
         user: User,
         response: Response,
         session_started_at: datetime | None,
+        remember_me: bool,
         session_expires_at_override: datetime | None = None,
-        previous_jti: str | None = None,
     ) -> SessionInfo:
         now = datetime.now(timezone.utc)
-        started = session_started_at or now
-        session_expires_at = session_expires_at_override or (
-            started + timedelta(days=self.settings.refresh_token_days)
-        )
-
         access_token, access_exp = create_access_token(subject=str(user.id))
-        jti = generate_jti()
-        refresh_token, refresh_exp = create_refresh_token(
-            subject=str(user.id),
-            jti=jti,
-            session_expires_at=session_expires_at,
-        )
 
-        token_row = RefreshToken(
-            user_id=user.id,
-            jti=jti,
-            session_started_at=started,
-            session_expires_at=session_expires_at,
-            expires_at=refresh_exp,
-        )
-        await self.tokens.create(token_row)
-
-        access_max_age = int((access_exp - now).total_seconds())
-        refresh_max_age = int((refresh_exp - now).total_seconds())
-        set_access_cookie(response, access_token, access_max_age)
-        set_refresh_cookie(response, refresh_token, refresh_max_age)
+        if remember_me:
+            refresh_token, refresh_exp = create_refresh_token(subject=str(user.id))
+            refresh_max_age = int((refresh_exp - now).total_seconds())
+            set_refresh_cookie(response, refresh_token, refresh_max_age)
+            session_expires_at = refresh_exp
+            # Cookie de acesso persistente — expira junto com o token (max_age explícito)
+            set_access_cookie(response, access_token, int((access_exp - now).total_seconds()))
+        else:
+            # Sem remember_me: acesso apenas via session cookie (sem max_age)
+            # Nenhum refresh token é emitido
+            session_expires_at = access_exp
+            set_access_cookie(response, access_token, None)
 
         return SessionInfo(
             user=CurrentUser.model_validate(user),

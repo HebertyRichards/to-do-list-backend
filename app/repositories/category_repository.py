@@ -10,6 +10,10 @@ class CategoryRepository:
     async def get_by_id(self, category_id: int) -> Category | None:
         return await self.db.get(Category, category_id)
 
+    async def get_by_slug(self, slug: str) -> Category | None:
+        stmt = select(Category).where(Category.slug == slug)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     async def list_for_user(self, user_id: int) -> list[Category]:
         stmt = select(Category).where(Category.owner_user_id == user_id).order_by(Category.created_at)
         return list((await self.db.execute(stmt)).scalars().all())

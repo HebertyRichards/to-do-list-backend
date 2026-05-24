@@ -15,6 +15,14 @@ config.set_main_option("sqlalchemy.url", settings.database_url_sync)
 
 target_metadata = Base.metadata
 
+OUR_SCHEMAS = {"accounts", "app"}
+
+
+def include_object(object, name, type_, reflected, compare_to):
+    if type_ == "table":
+        return getattr(object, "schema", None) in OUR_SCHEMAS
+    return True
+
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
@@ -24,6 +32,9 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_schemas=True,
+        include_object=include_object,
+        version_table_schema="accounts",
     )
 
     with context.begin_transaction():
@@ -42,6 +53,9 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            include_schemas=True,
+            include_object=include_object,
+            version_table_schema="accounts",
         )
 
         with context.begin_transaction():

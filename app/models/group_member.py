@@ -15,10 +15,10 @@ class GroupMember(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     group_id: Mapped[int] = mapped_column(
-        ForeignKey("groups.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("app.groups.id", ondelete="CASCADE"), index=True, nullable=False
     )
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("accounts.users.id", ondelete="CASCADE"), index=True, nullable=False
     )
     role: Mapped[GroupRole] = mapped_column(
         Enum(GroupRole, name="group_role"), default=GroupRole.member, nullable=False
@@ -30,4 +30,7 @@ class GroupMember(Base):
     group = relationship("Group", back_populates="members")
     user = relationship("User", back_populates="memberships")
 
-    __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_group_member"),)
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id", name="uq_group_member"),
+        {"schema": "app"},
+    )

@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import Field, AnyUrl
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,7 +12,6 @@ class Settings(BaseSettings):
     )
 
     app_env: str = Field(...)
-    app_port: int = Field(...)
     log_level: str = Field(...)
 
     database_url: str = Field(...)

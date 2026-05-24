@@ -1,26 +1,24 @@
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
 
 
 class RegisterInput(BaseModel):
     email: EmailStr
     username: str = Field(min_length=3, max_length=60)
     password: str = Field(min_length=8, max_length=128)
-    full_name: str | None = Field(default=None, max_length=120)
 
 
 class LoginInput(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
+    remember_me: bool = False
 
 
 class CurrentUser(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
     email: EmailStr
     username: str
-    full_name: str | None
     avatar_url: str | None
     onboarded: bool
 
@@ -29,3 +27,24 @@ class SessionInfo(BaseModel):
     user: CurrentUser
     session_expires_at: datetime
     access_expires_at: datetime
+
+
+class ForgotPasswordInput(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+    reset_token: str | None = None
+
+
+class ResetPasswordInput(BaseModel):
+    token: str = Field(min_length=10, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+    confirm_new_password: str = Field(min_length=8, max_length=128)
+
+    @model_validator(mode="after")
+    def _passwords_match(self) -> "ResetPasswordInput":
+        if self.new_password != self.confirm_new_password:
+            raise ValueError("As senhas não coincidem")
+        return self

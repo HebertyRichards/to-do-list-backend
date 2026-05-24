@@ -1,15 +1,14 @@
 import asyncio
 import json
 import logging
-from typing import Dict, List, Any
 from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
 
 
 class NotificationManager:
-    def __init__(self):
-        self._connections: Dict[int, List[WebSocket]] = {}
+    def __init__(self) -> None:
+        self._connections: dict[int, list[WebSocket]] = {}
         self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket, user_id: int) -> None:
@@ -19,7 +18,7 @@ class NotificationManager:
                 self._connections[user_id] = []
             if websocket not in self._connections[user_id]:
                 self._connections[user_id].append(websocket)
-        logger.debug(f"WS conectado user_id={user_id}")
+        logger.debug("WS conectado user_id=%s", user_id)
 
     async def disconnect(self, websocket: WebSocket, user_id: int) -> None:
         async with self._lock:
@@ -28,9 +27,9 @@ class NotificationManager:
                 conns.remove(websocket)
             if not conns and user_id in self._connections:
                 del self._connections[user_id]
-        logger.debug(f"WS desconectado user_id={user_id}")
+        logger.debug("WS desconectado user_id=%s", user_id)
 
-    async def push(self, user_id: int, payload: dict[str, Any]) -> None:
+    async def push(self, user_id: int, payload: dict[str, object]) -> None:
         async with self._lock:
             conns = list(self._connections.get(user_id, []))
 
@@ -42,7 +41,8 @@ class NotificationManager:
         for ws in conns:
             try:
                 await ws.send_text(message)
-            except Exception:
+            except (RuntimeError, Exception) as exc:
+                logger.debug("WS send falhou user_id=%s: %s", user_id, exc)
                 dead.append(ws)
 
         if dead:

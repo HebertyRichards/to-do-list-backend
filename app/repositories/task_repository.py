@@ -1,52 +1,44 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.models import Tag, Task, task_tags
+from app.models import Tag, Task
+from app.models.task import task_tags
 
 
 class TaskRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_by_id(self, task_id: int) -> Task | None:
-        stmt = (
+    def _base_query(self):
+        return (
             select(Task)
-            .options(selectinload(Task.tags))
-            .where(Task.id == task_id)
+            .options(
+                selectinload(Task.tags),
+                selectinload(Task.category),
+                selectinload(Task.assignee),
+            )
         )
+
+    async def get_by_id(self, task_id: int) -> Task | None:
+        stmt = self._base_query().where(Task.id == task_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_by_slug(self, slug: str) -> Task | None:
+        stmt = self._base_query().where(Task.slug == slug)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def list_for_user(self, user_id: int) -> list[Task]:
-        stmt = (
-            select(Task)
-            .options(selectinload(Task.tags))
-            .where(Task.owner_user_id == user_id)
-            .order_by(Task.due_date)
-        )
+        stmt = self._base_query().where(Task.owner_user_id == user_id).order_by(Task.due_date)
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def list_for_group(self, group_id: int) -> list[Task]:
-        stmt = (
-            select(Task)
-            .options(selectinload(Task.tags))
-            .where(Task.group_id == group_id)
-            .order_by(Task.due_date)
-        )
-        return list((await self.db.execute(stmt)).scalars().all())
-
-    async def list_assigned(self, user_id: int) -> list[Task]:
-        stmt = (
-            select(Task)
-            .options(selectinload(Task.tags))
-            .where(Task.assignee_user_id == user_id)
-            .order_by(Task.due_date)
-        )
+        stmt = self._base_query().where(Task.group_id == group_id).order_by(Task.due_date)
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def create(self, task: Task) -> Task:
         self.db.add(task)
         await self.db.flush()
-        await self.db.refresh(task, ["tags"])
+        await self.db.refresh(task, ["tags", "category", "assignee"])
         return task
 
     async def delete(self, task: Task) -> None:

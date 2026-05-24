@@ -9,6 +9,7 @@ class Subtask(Base, TimestampMixin):
     __tablename__ = "subtasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(16), unique=True, index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(180), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -22,17 +23,19 @@ class Subtask(Base, TimestampMixin):
     due_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     task_id: Mapped[int] = mapped_column(
-        ForeignKey("tasks.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("app.tasks.id", ondelete="CASCADE"), index=True, nullable=False
     )
     creator_user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("accounts.users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     assignee_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+        ForeignKey("accounts.users.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     task = relationship("Task", back_populates="subtasks")
+    assignee = relationship("User", foreign_keys=[assignee_user_id])
 
     __table_args__ = (
         CheckConstraint("start_date <= due_date", name="ck_subtask_dates"),
+        {"schema": "app"},
     )

@@ -6,8 +6,9 @@ from app.models.base import Base, TimestampMixin
 task_tags = Table(
     "task_tags",
     Base.metadata,
-    Column("task_id", ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True),
-    Column("tag_id", ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+    Column("task_id", ForeignKey("app.tasks.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", ForeignKey("app.tags.id", ondelete="CASCADE"), primary_key=True),
+    schema="app",
 )
 
 
@@ -19,10 +20,10 @@ class Tag(Base, TimestampMixin):
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     owner_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+        ForeignKey("accounts.users.id", ondelete="CASCADE"), nullable=True, index=True
     )
     group_id: Mapped[int | None] = mapped_column(
-        ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True
+        ForeignKey("app.groups.id", ondelete="CASCADE"), nullable=True, index=True
     )
 
     __table_args__ = (
@@ -32,4 +33,5 @@ class Tag(Base, TimestampMixin):
         ),
         UniqueConstraint("name", "owner_user_id", name="uq_tag_name_owner"),
         UniqueConstraint("name", "group_id", name="uq_tag_name_group"),
+        {"schema": "app"},
     )

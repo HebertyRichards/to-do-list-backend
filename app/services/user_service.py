@@ -16,8 +16,11 @@ class UserService:
         return UserProfile.model_validate(user)
 
     async def update_profile(self, user: User, data: UpdateProfileInput) -> UserProfile:
-        if data.full_name is not None:
-            user.full_name = data.full_name
+        if data.username is not None:
+            existing = await self.users.get_by_username(data.username)
+            if existing and existing.id != user.id:
+                raise AppException(ErrorCode.USERNAME_TAKEN)
+            user.username = data.username
         if data.avatar_url is not None:
             user.avatar_url = data.avatar_url
         if data.onboarded is not None:

@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 from app.models.task import TaskStatus
 
 
@@ -17,10 +17,9 @@ class TaskBase(BaseModel):
 
 
 class TaskCreate(TaskBase):
-    category_id: int
-    group_id: int | None = None
-    assignee_user_id: int | None = None
-    tag_ids: list[int] = Field(default_factory=list)
+    category_slug: str
+    assignee_username: str | None = None
+    tag_names: list[str] = Field(default_factory=list)
 
 
 class TaskUpdate(BaseModel):
@@ -29,30 +28,23 @@ class TaskUpdate(BaseModel):
     start_date: datetime | None = None
     due_date: datetime | None = None
     status: TaskStatus | None = None
-    category_id: int | None = None
-    assignee_user_id: int | None = None
-    tag_ids: list[int] | None = None
+    category_slug: str | None = None
+    assignee_username: str | None = None
+    tag_names: list[str] | None = None
 
 
 class TagOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
     name: str
     color: str | None
 
 
 class TaskOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
+    slug: str
     title: str
     description: str | None
     status: TaskStatus
     start_date: datetime
     due_date: datetime
-    category_id: int
-    creator_user_id: int
-    owner_user_id: int | None
-    group_id: int | None
-    assignee_user_id: int | None
+    category_slug: str
+    assignee_username: str | None = None
     tags: list[TagOut] = Field(default_factory=list)

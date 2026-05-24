@@ -45,6 +45,9 @@ class ErrorCode(str, Enum):
     DATE_RANGE_INVALID = "DATE_RANGE_INVALID"
     ASSIGNEE_NOT_IN_GROUP = "ASSIGNEE_NOT_IN_GROUP"
 
+    RESET_TOKEN_INVALID = "RESET_TOKEN_INVALID"
+    RESET_TOKEN_EXPIRED = "RESET_TOKEN_EXPIRED"
+
     TOO_MANY_REQUESTS = "TOO_MANY_REQUESTS"
 
     DATABASE_ERROR = "DATABASE_ERROR"
@@ -86,6 +89,9 @@ ERROR_CATALOG: dict[ErrorCode, ErrorSpec] = {
 
     ErrorCode.DATE_RANGE_INVALID: ErrorSpec("DATE_RANGE_INVALID", 400, "Data de inicio deve ser anterior a data limite."),
     ErrorCode.ASSIGNEE_NOT_IN_GROUP: ErrorSpec("ASSIGNEE_NOT_IN_GROUP", 400, "Usuario atribuido nao faz parte do grupo."),
+
+    ErrorCode.RESET_TOKEN_INVALID: ErrorSpec("RESET_TOKEN_INVALID", 400, "Token de redefinicao invalido."),
+    ErrorCode.RESET_TOKEN_EXPIRED: ErrorSpec("RESET_TOKEN_EXPIRED", 410, "Token de redefinicao expirado. Solicite novamente."),
 
     ErrorCode.TOO_MANY_REQUESTS: ErrorSpec("TOO_MANY_REQUESTS", 429, "Muitas requisicoes. Tente mais tarde."),
 

@@ -17,10 +17,11 @@ class NotificationType(str, enum.Enum):
 
 class Notification(Base, TimestampMixin):
     __tablename__ = "notifications"
+    __table_args__ = {"schema": "app"}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("accounts.users.id", ondelete="CASCADE"), index=True, nullable=False
     )
     type: Mapped[NotificationType] = mapped_column(
         Enum(NotificationType, name="notification_type"), nullable=False

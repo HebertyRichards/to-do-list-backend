@@ -12,16 +12,16 @@ async def create(data: SubtaskCreate, user: User = Depends(get_current_user), se
     return await service.create(user, data)
 
 
-@subtask_routes.get("/task/{task_id}", response_model=list[SubtaskOut])
-async def list_for_task(task_id: int, user: User = Depends(get_current_user), service: SubtaskService = Depends()):
-    return await service.list_for_task(user, task_id)
+@subtask_routes.get("/task/{task_slug}", response_model=list[SubtaskOut])
+async def list_for_task(task_slug: str, user: User = Depends(get_current_user), service: SubtaskService = Depends()):
+    return await service.list_for_task(user, task_slug)
 
 
-@subtask_routes.patch("/{subtask_id}", response_model=SubtaskOut)
-async def update(subtask_id: int, data: SubtaskUpdate, user: User = Depends(get_current_user), service: SubtaskService = Depends()):
-    return await service.update(user, subtask_id, data)
+@subtask_routes.patch("/{subtask_slug}", response_model=SubtaskOut)
+async def update(subtask_slug: str, data: SubtaskUpdate, user: User = Depends(get_current_user), service: SubtaskService = Depends()):
+    return await service.update(user, subtask_slug, data)
 
 
-@subtask_routes.delete("/{subtask_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete(subtask_id: int, user: User = Depends(get_current_user), service: SubtaskService = Depends()):
-    await service.delete(user, subtask_id)
+@subtask_routes.delete("/{subtask_slug}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete(subtask_slug: str, user: User = Depends(get_current_user), service: SubtaskService = Depends()):
+    await service.delete(user, subtask_slug)

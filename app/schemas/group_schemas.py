@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from app.models.group_member import GroupRole
 from app.models.join_request import JoinRequestStatus
 
@@ -10,29 +10,20 @@ class GroupCreate(BaseModel):
 
 
 class GroupCreated(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
+    slug: str
     name: str
     description: str | None
-    admin_user_id: int
     key: str
 
 
 class GroupOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
+    slug: str
     name: str
     description: str | None
-    admin_user_id: int
     member_count: int
 
 
 class GroupMemberOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    user_id: int
     username: str
     role: GroupRole
     joined_at: datetime
@@ -43,11 +34,7 @@ class JoinGroupInput(BaseModel):
 
 
 class JoinRequestOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    group_id: int
-    user_id: int
+    slug: str
     username: str
     status: JoinRequestStatus
     expires_at: datetime

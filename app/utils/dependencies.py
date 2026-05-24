@@ -1,4 +1,3 @@
-from typing import Optional
 from fastapi import Depends, Request, WebSocket, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +38,7 @@ async def get_current_user(
 
 async def get_current_user_ws(
     websocket: WebSocket,
-    token_query: Optional[str] = Query(default=None, alias="token"),
+    token_query: str | None = Query(default=None, alias="token"),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     token = token_query or websocket.cookies.get(ACCESS_COOKIE)

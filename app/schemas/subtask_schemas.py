@@ -1,15 +1,15 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 from app.models.task import TaskStatus
 
 
 class SubtaskCreate(BaseModel):
-    task_id: int
+    task_slug: str
     title: str = Field(min_length=1, max_length=180)
     description: str | None = None
     start_date: datetime
     due_date: datetime
-    assignee_user_id: int | None = None
+    assignee_username: str | None = None
 
     @model_validator(mode="after")
     def _check_dates(self):
@@ -24,18 +24,15 @@ class SubtaskUpdate(BaseModel):
     start_date: datetime | None = None
     due_date: datetime | None = None
     status: TaskStatus | None = None
-    assignee_user_id: int | None = None
+    assignee_username: str | None = None
 
 
 class SubtaskOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    task_id: int
+    slug: str
+    task_slug: str
     title: str
     description: str | None
     status: TaskStatus
     start_date: datetime
     due_date: datetime
-    creator_user_id: int
-    assignee_user_id: int | None
+    assignee_username: str | None = None

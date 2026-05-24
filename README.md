@@ -10,11 +10,11 @@ API REST + WebSocket construída com **FastAPI**, **SQLAlchemy 2 async** e **Pos
 |---|---|
 | Framework | FastAPI 0.115.6 |
 | ORM | SQLAlchemy 2.0 (asyncio + asyncpg) |
-| Banco de dados | PostgreSQL (Neon free tier) |
+| Banco de dados | PostgreSQL |
 | Migrações | Alembic |
 | Validação | Pydantic 2 |
 | Autenticação | JWT via `python-jose` + cookies httpOnly |
-| Cache / filas | Redis 7 (com fallback `NullRedis` se indisponível) |
+| Cache | Redis 8 (com fallback `NullRedis` se indisponível) |
 | WebSocket | FastAPI nativo |
 | Servidor | Uvicorn |
 
@@ -74,51 +74,87 @@ to-do-list-backend/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
-├── alembic.ini
-└── .env.example
+└── alembic.ini
 ```
 
 ---
 
 ## Variáveis de ambiente
 
-Copie `.env.example` para `.env` e preencha todos os campos (todos são obrigatórios — não há fallback em produção).
+Crie um arquivo `.env` na raiz do backend. Todos os campos são obrigatórios — não há fallback em produção.
+
+### Desenvolvimento local
 
 ```env
-# Aplicação
-APP_ENV=development          # development | production
-APP_PORT=8000
-LOG_LEVEL=INFO               # DEBUG | INFO | WARNING | ERROR
+APP_ENV=development
+LOG_LEVEL=INFO
 
-# Banco de dados
-DATABASE_URL=postgresql+asyncpg://USER:PASS@HOST/DB?ssl=require
-DATABASE_URL_SYNC=postgresql+psycopg2://USER:PASS@HOST/DB?sslmode=require
+DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@ep-xxx-pooler.sa-east-1.aws.neon.tech/neondb?ssl=require
+DATABASE_URL_SYNC=postgresql+psycopg2://USER:PASSWORD@ep-xxx.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
 
-# Redis
-REDIS_URL=redis://redis:6379/0
+REDIS_URL=redis://localhost:6379/0
 
-# JWT
-JWT_SECRET=                  # openssl rand -hex 32
+JWT_SECRET=<saída do openssl rand -hex 32>
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_MINUTES=60
 REFRESH_TOKEN_DAYS=30
 
-# CORS / Cookies
 FRONTEND_ORIGIN=http://localhost:3000
-COOKIE_DOMAIN=               # Deixar vazio em desenvolvimento
-COOKIE_SECURE=false          # true em produção (HTTPS)
+COOKIE_DOMAIN=
+COOKIE_SECURE=false
 COOKIE_SAMESITE=lax
 ```
 
+### Produção (Docker)
+
+```env
+APP_ENV=production
+LOG_LEVEL=INFO
+
+DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@ep-xxx-pooler.sa-east-1.aws.neon.tech/neondb?ssl=require
+DATABASE_URL_SYNC=postgresql+psycopg2://USER:PASSWORD@ep-xxx.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+
+REDIS_URL=redis://redis:6379/0
+
+JWT_SECRET=<saída do openssl rand -hex 32>
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_MINUTES=60
+REFRESH_TOKEN_DAYS=30
+
+FRONTEND_ORIGIN=https://seu-dominio.com
+COOKIE_DOMAIN=seu-dominio.com
+COOKIE_SECURE=true
+COOKIE_SAMESITE=lax
+```
+
+### Sobre as duas `DATABASE_URL`
+
+O Neon fornece dois endpoints distintos:
+
+| Variável | Host | Driver | Uso |
+|---|---|---|---|
+| `DATABASE_URL` | `ep-xxx-pooler…` (com `-pooler`) | `+asyncpg` | Runtime (FastAPI async) |
+| `DATABASE_URL_SYNC` | `ep-xxx…` (sem `-pooler`) | `+psycopg2` | Alembic migrations (sync) |
+
+A URL base vem do painel do Neon em **Connection string**. Para obter a URL direta (sem pooler), remova `-pooler` do hostname.
+
+### Como gerar o `JWT_SECRET`
+
+```bash
+openssl rand -hex 32
+```
+
+Nunca reutilize o segredo entre ambientes e nunca commite o `.env`.
+
 ---
 
-## Como rodar localmente
+## Desenvolvimento local
 
 ### Pré-requisitos
 
 - Python 3.11+
-- PostgreSQL (ou conta Neon)
-- Redis (ou Docker)
+- PostgreSQL (Neon ou local)
+- Redis acessível na `REDIS_URL` configurada
 
 ### 1. Instalar dependências
 
@@ -128,12 +164,9 @@ source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Configurar ambiente
+### 2. Criar `.env`
 
-```bash
-cp .env.example .env
-# Editar .env com os dados do banco e JWT_SECRET
-```
+Crie o arquivo `.env` na raiz do backend com os valores da seção **Variáveis de ambiente — Desenvolvimento local** acima.
 
 ### 3. Rodar migrações
 
@@ -153,13 +186,13 @@ alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Acesse a documentação interativa em `http://localhost:8000/docs`.
+Documentação interativa em `http://localhost:8000/docs`.
 
 ---
 
-## Docker (stack completa)
+## Produção com Docker
 
-Os dois repositórios precisam estar na mesma pasta pai:
+A stack completa (backend + frontend) sobe a partir do `docker-compose.yml` deste repositório. Os dois projetos precisam estar na mesma pasta pai:
 
 ```
 projetos/
@@ -167,22 +200,58 @@ projetos/
 └── to-do-list-backend/  # backend ← docker-compose.yml aqui
 ```
 
-```bash
-# Na pasta do backend
-cp .env.example .env
-# Editar .env
+### 1. Configurar `.env` de produção
 
-# Subir tudo
+```env
+APP_ENV=production
+COOKIE_SECURE=true
+COOKIE_SAMESITE=lax
+COOKIE_DOMAIN=seu-dominio.com
+FRONTEND_ORIGIN=https://seu-dominio.com
+```
+
+> `DATABASE_URL`, `REDIS_URL` e `JWT_SECRET` devem vir do gestor de segredos da sua infraestrutura (Vault, AWS Secrets Manager, GitHub Actions secrets, etc.) — nunca commitar.
+
+### 2. Rodar migrações uma vez
+
+```bash
+docker compose run --rm backend alembic upgrade head
+```
+
+### 3. Subir a stack
+
+```bash
+docker compose up -d --build
+docker compose logs -f
+```
+
+### 4. Atualizar deploy
+
+```bash
+git pull
+docker compose build
 docker compose up -d
 ```
 
 Serviços:
 
-| Serviço | Porta | Rede |
+| Serviço | Porta exposta | Rede |
 |---|---|---|
-| Redis | 6379 (interno) | internal |
-| Backend | 8000 | internal + public |
-| Frontend | 3000 | public |
+| `redis` | — (interno) | `internal` |
+| `backend` | `8000:8000` | `internal` + `public` |
+| `frontend` | `3000:3000` | `public` |
+
+### 5. Reverse proxy
+
+Em produção, coloque um Nginx / Caddy / Traefik na frente para terminar TLS, rotear `/api/*` e `/ws/*` para o backend, e fazer upgrade de WebSocket. Exemplo Caddy:
+
+```caddy
+seu-dominio.com {
+  reverse_proxy /api/* backend:8000
+  reverse_proxy /ws/*  backend:8000
+  reverse_proxy frontend:3000
+}
+```
 
 ---
 
@@ -197,6 +266,8 @@ Serviços:
 | `POST` | `/auth/refresh` | cookie `tdl_refresh` | Renovar access token |
 | `POST` | `/auth/logout` | — | Logout. Limpa cookies |
 | `GET` | `/auth/session` | cookie `tdl_access` | Sessão atual (`SessionInfo`) |
+| `POST` | `/auth/forgot-password` | — | Solicita token de redefinição (TTL 1h no Redis) |
+| `POST` | `/auth/reset-password` | — | Redefine senha com token + revoga sessões |
 
 ### Usuário — `/users`
 
@@ -289,6 +360,14 @@ Se um refresh token já revogado for usado, **todos os refresh tokens do usuári
 
 A chave de acesso ao grupo é gerada com `secrets.token_urlsafe(32)`, exibida uma única vez para o admin e armazenada apenas como `SHA-256`. A comparação usa `secrets.compare_digest` para evitar timing attacks.
 
+### Recuperação de senha
+
+`POST /auth/forgot-password` gera um token aleatório (`secrets.token_urlsafe(32)`) e armazena no Redis em `pwd_reset:{token}` com TTL de 1 hora, mapeando para o `user_id`. A resposta é sempre `200 OK` mesmo se o email não existir (anti-enumeração).
+
+`POST /auth/reset-password` valida o token, atualiza a senha, **revoga todos os refresh tokens do usuário** (logout em todos os dispositivos), limpa cookies e remove o token do Redis. Token usado é descartado e não pode ser reutilizado.
+
+Como o plano free não tem serviço de email, o token é devolvido inline no campo `reset_token` da resposta de `/auth/forgot-password` para fins de desenvolvimento. Em produção real esse campo deve ser removido e o token enviado por email.
+
 ---
 
 ## Banco de dados
@@ -353,4 +432,9 @@ Os códigos estão centralizados em `app/errors/codes.py` (`ErrorCode` enum + `E
 
 ## Redis
 
-O Redis é usado para armazenar pedidos de entrada em grupo (`join_request:{id}`) com TTL de 3 dias. Se o Redis estiver indisponível no startup, o sistema continua funcionando com um `NullRedis` (no-op) — os pedidos continuam gravados no PostgreSQL, só a expiração automática via TTL fica inativa.
+Usado para:
+
+- **Pedidos de entrada em grupo** — `join_request:{id}` com TTL de 3 dias
+- **Tokens de redefinição de senha** — `pwd_reset:{token}` com TTL de 1 hora
+
+Se o Redis estiver indisponível no startup, o sistema continua funcionando com um `NullRedis` (no-op) — dados que precisam expirar automaticamente via TTL deixam de expirar, mas o restante (pedidos em DB, senhas) continua íntegro.

@@ -17,16 +17,16 @@ async def list_user(user: User = Depends(get_current_user), service: TaskService
     return await service.list_user(user)
 
 
-@task_routes.get("/group/{group_id}", response_model=list[TaskOut])
-async def list_group(group_id: int, user: User = Depends(get_current_user), service: TaskService = Depends()):
-    return await service.list_group(user, group_id)
+@task_routes.get("/group/{group_slug}", response_model=list[TaskOut])
+async def list_group(group_slug: str, user: User = Depends(get_current_user), service: TaskService = Depends()):
+    return await service.list_group(user, group_slug)
 
 
-@task_routes.patch("/{task_id}", response_model=TaskOut)
-async def update(task_id: int, data: TaskUpdate, user: User = Depends(get_current_user), service: TaskService = Depends()):
-    return await service.update(user, task_id, data)
+@task_routes.patch("/{task_slug}", response_model=TaskOut)
+async def update(task_slug: str, data: TaskUpdate, user: User = Depends(get_current_user), service: TaskService = Depends()):
+    return await service.update(user, task_slug, data)
 
 
-@task_routes.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete(task_id: int, user: User = Depends(get_current_user), service: TaskService = Depends()):
-    await service.delete(user, task_id)
+@task_routes.delete("/{task_slug}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete(task_slug: str, user: User = Depends(get_current_user), service: TaskService = Depends()):
+    await service.delete(user, task_slug)

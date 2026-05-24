@@ -1,6 +1,5 @@
 from app.models.base import Base
 from app.models.user import User
-from app.models.refresh_token import RefreshToken
 from app.models.category import Category
 from app.models.task import Task
 from app.models.subtask import Subtask
@@ -13,7 +12,6 @@ from app.models.notification import Notification, NotificationType
 __all__ = [
     "Base",
     "User",
-    "RefreshToken",
     "Category",
     "Task",
     "Subtask",

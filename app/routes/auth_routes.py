@@ -1,5 +1,12 @@
 from fastapi import APIRouter, Depends, Response, status
-from app.schemas.auth_schemas import LoginInput, RegisterInput, SessionInfo
+from app.schemas.auth_schemas import (
+    ForgotPasswordInput,
+    ForgotPasswordResponse,
+    LoginInput,
+    RegisterInput,
+    ResetPasswordInput,
+    SessionInfo,
+)
 from app.services.auth_service import AuthService
 from app.utils.cookies import REFRESH_COOKIE
 from app.utils.dependencies import get_current_user
@@ -34,3 +41,13 @@ async def logout(request: Request, response: Response, service: AuthService = De
 @auth_routes.get("/session", response_model=SessionInfo)
 async def session(request: Request, service: AuthService = Depends()):
     return await service.get_session(request)
+
+
+@auth_routes.post("/forgot-password", response_model=ForgotPasswordResponse)
+async def forgot_password(data: ForgotPasswordInput, service: AuthService = Depends()):
+    return await service.forgot_password(data)
+
+
+@auth_routes.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(data: ResetPasswordInput, response: Response, service: AuthService = Depends()):
+    await service.reset_password(data, response)

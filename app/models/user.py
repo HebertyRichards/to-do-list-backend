@@ -5,6 +5,7 @@ from app.models.base import Base, TimestampMixin
 
 class User(Base, TimestampMixin):
     __tablename__ = "users"
+    __table_args__ = {"schema": "accounts"}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
@@ -14,5 +15,4 @@ class User(Base, TimestampMixin):
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     onboarded: Mapped[bool] = mapped_column(default=False, nullable=False)
 
-    refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
     memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")

@@ -17,16 +17,16 @@ async def list_user(user: User = Depends(get_current_user), service: CategorySer
     return await service.list_user(user)
 
 
-@category_routes.get("/group/{group_id}", response_model=list[CategoryOut])
-async def list_group(group_id: int, user: User = Depends(get_current_user), service: CategoryService = Depends()):
-    return await service.list_group(user, group_id)
+@category_routes.get("/group/{group_slug}", response_model=list[CategoryOut])
+async def list_group(group_slug: str, user: User = Depends(get_current_user), service: CategoryService = Depends()):
+    return await service.list_group(user, group_slug)
 
 
-@category_routes.patch("/{category_id}", response_model=CategoryOut)
-async def update(category_id: int, data: CategoryUpdate, user: User = Depends(get_current_user), service: CategoryService = Depends()):
-    return await service.update(user, category_id, data)
+@category_routes.patch("/{category_slug}", response_model=CategoryOut)
+async def update(category_slug: str, data: CategoryUpdate, user: User = Depends(get_current_user), service: CategoryService = Depends()):
+    return await service.update(user, category_slug, data)
 
 
-@category_routes.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete(category_id: int, user: User = Depends(get_current_user), service: CategoryService = Depends()):
-    await service.delete(user, category_id)
+@category_routes.delete("/{category_slug}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete(category_slug: str, user: User = Depends(get_current_user), service: CategoryService = Depends()):
+    await service.delete(user, category_slug)
