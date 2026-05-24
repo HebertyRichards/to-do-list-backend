@@ -1,11 +1,31 @@
+import re
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator, model_validator
+
+_PASSWORD_RULES = [
+    (r"[A-Z]", "A senha deve conter ao menos uma letra maiúscula"),
+    (r"[a-z]", "A senha deve conter ao menos uma letra minúscula"),
+    (r"[0-9]", "A senha deve conter ao menos um número"),
+    (r"[^A-Za-z0-9]", "A senha deve conter ao menos um caractere especial"),
+]
+
+
+def _validate_password(v: str) -> str:
+    for pattern, msg in _PASSWORD_RULES:
+        if not re.search(pattern, v):
+            raise ValueError(msg)
+    return v
 
 
 class RegisterInput(BaseModel):
     email: EmailStr
     username: str = Field(min_length=3, max_length=60)
     password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return _validate_password(v)
 
 
 class LoginInput(BaseModel):
@@ -42,6 +62,11 @@ class ResetPasswordInput(BaseModel):
     token: str = Field(min_length=10, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)
     confirm_new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_strength(cls, v: str) -> str:
+        return _validate_password(v)
 
     @model_validator(mode="after")
     def _passwords_match(self) -> "ResetPasswordInput":

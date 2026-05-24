@@ -91,9 +91,9 @@ class GroupService:
 
         redis = await get_redis()
         await redis.setex(
-            f"join_request:{req.slug}",
+            f"user:{user.id}:join_request:{req.slug}",
             JOIN_REQUEST_TTL_DAYS * 86400,
-            json.dumps({"request_slug": req.slug}),
+            json.dumps({"request_slug": req.slug, "user_id": user.id, "group_id": group.id}),
         )
 
         notif = Notification(
