@@ -5,6 +5,7 @@ from app.schemas.group_schemas import (
     GroupCreated,
     GroupMemberOut,
     GroupOut,
+    GroupUpdate,
     JoinGroupInput,
     JoinRequestOut,
 )
@@ -17,6 +18,16 @@ group_routes = APIRouter(prefix="/groups", tags=["groups"])
 @group_routes.get("", response_model=list[GroupOut])
 async def list_groups(user: User = Depends(get_current_user), service: GroupService = Depends()):
     return await service.list_groups(user)
+
+
+@group_routes.get("/{group_slug}", response_model=GroupOut)
+async def get_group(group_slug: str, user: User = Depends(get_current_user), service: GroupService = Depends()):
+    return await service.get_group(user, group_slug)
+
+
+@group_routes.patch("/{group_slug}", response_model=GroupOut)
+async def update_group(group_slug: str, data: GroupUpdate, user: User = Depends(get_current_user), service: GroupService = Depends()):
+    return await service.update_group(user, group_slug, data)
 
 
 @group_routes.post("", response_model=GroupCreated, status_code=status.HTTP_201_CREATED)

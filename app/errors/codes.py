@@ -48,6 +48,9 @@ class ErrorCode(str, Enum):
     RESET_TOKEN_INVALID = "RESET_TOKEN_INVALID"
     RESET_TOKEN_EXPIRED = "RESET_TOKEN_EXPIRED"
 
+    VERIFY_CODE_INVALID = "VERIFY_CODE_INVALID"
+    VERIFY_CODE_EXPIRED = "VERIFY_CODE_EXPIRED"
+
     TOO_MANY_REQUESTS = "TOO_MANY_REQUESTS"
 
     DATABASE_ERROR = "DATABASE_ERROR"
@@ -92,6 +95,9 @@ ERROR_CATALOG: dict[ErrorCode, ErrorSpec] = {
 
     ErrorCode.RESET_TOKEN_INVALID: ErrorSpec("RESET_TOKEN_INVALID", 400, "Token de redefinicao invalido."),
     ErrorCode.RESET_TOKEN_EXPIRED: ErrorSpec("RESET_TOKEN_EXPIRED", 410, "Token de redefinicao expirado. Solicite novamente."),
+
+    ErrorCode.VERIFY_CODE_INVALID: ErrorSpec("VERIFY_CODE_INVALID", 400, "Codigo invalido."),
+    ErrorCode.VERIFY_CODE_EXPIRED: ErrorSpec("VERIFY_CODE_EXPIRED", 410, "Codigo expirado. Solicite um novo."),
 
     ErrorCode.TOO_MANY_REQUESTS: ErrorSpec("TOO_MANY_REQUESTS", 429, "Muitas requisicoes. Tente mais tarde."),
 

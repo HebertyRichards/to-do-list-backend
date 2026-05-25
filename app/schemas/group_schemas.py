@@ -9,6 +9,11 @@ class GroupCreate(BaseModel):
     description: str | None = None
 
 
+class GroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = None
+
+
 class GroupCreated(BaseModel):
     slug: str
     name: str

@@ -19,6 +19,7 @@ from app.schemas.group_schemas import (
     GroupCreated,
     GroupMemberOut,
     GroupOut,
+    GroupUpdate,
     JoinGroupInput,
     JoinRequestOut,
 )
@@ -66,6 +67,28 @@ class GroupService:
             description=group.description,
             key=raw_key,
         )
+
+    async def get_group(self, user: User, group_slug: str) -> GroupOut:
+        group = await self.repo.get_by_slug_with_members(group_slug)
+        if not group:
+            raise AppException(ErrorCode.GROUP_NOT_FOUND)
+        if not await self.repo.get_member(group.id, user.id):
+            raise AppException(ErrorCode.NOT_GROUP_MEMBER)
+        return GroupOut(slug=group.slug, name=group.name, description=group.description, member_count=len(group.members))
+
+    async def update_group(self, admin: User, group_slug: str, data: GroupUpdate) -> GroupOut:
+        group = await self.repo.get_by_slug_with_members(group_slug)
+        if not group:
+            raise AppException(ErrorCode.GROUP_NOT_FOUND)
+        if group.admin_user_id != admin.id:
+            raise AppException(ErrorCode.NOT_GROUP_ADMIN)
+        if data.name is not None:
+            group.name = data.name
+        if data.description is not None:
+            group.description = data.description
+        await self.db.flush()
+        await self.db.commit()
+        return GroupOut(slug=group.slug, name=group.name, description=group.description, member_count=len(group.members))
 
     async def request_join(self, user: User, data: JoinGroupInput) -> dict:
         key_hash = hash_group_key(data.key)

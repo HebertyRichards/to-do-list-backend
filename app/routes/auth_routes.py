@@ -9,8 +9,6 @@ from app.schemas.auth_schemas import (
 )
 from app.services.auth_service import AuthService
 from app.utils.cookies import REFRESH_COOKIE
-from app.utils.dependencies import get_current_user
-from app.models import User
 from fastapi import Request
 
 auth_routes = APIRouter(prefix="/auth", tags=["auth"])

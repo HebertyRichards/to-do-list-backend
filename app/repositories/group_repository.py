@@ -17,6 +17,14 @@ class GroupRepository:
         stmt = select(Group).where(Group.slug == slug)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def get_by_slug_with_members(self, slug: str) -> Group | None:
+        stmt = (
+            select(Group)
+            .options(selectinload(Group.members))
+            .where(Group.slug == slug)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     async def get_by_key_hash(self, key_hash: str) -> Group | None:
         stmt = select(Group).where(Group.key_hash == key_hash)
         return (await self.db.execute(stmt)).scalar_one_or_none()

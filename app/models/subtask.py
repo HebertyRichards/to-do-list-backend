@@ -33,6 +33,7 @@ class Subtask(Base, TimestampMixin):
     )
 
     task = relationship("Task", back_populates="subtasks")
+    creator = relationship("User", foreign_keys=[creator_user_id])
     assignee = relationship("User", foreign_keys=[assignee_user_id])
 
     __table_args__ = (

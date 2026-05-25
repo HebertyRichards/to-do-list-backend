@@ -55,11 +55,11 @@ class ForgotPasswordInput(BaseModel):
 
 class ForgotPasswordResponse(BaseModel):
     message: str
-    reset_token: str | None = None
 
 
 class ResetPasswordInput(BaseModel):
-    token: str = Field(min_length=10, max_length=128)
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
     new_password: str = Field(min_length=8, max_length=128)
     confirm_new_password: str = Field(min_length=8, max_length=128)
 

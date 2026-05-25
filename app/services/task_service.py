@@ -113,7 +113,7 @@ class TaskService:
             )
 
         await self.db.flush()
-        await self.db.refresh(task, ["category", "assignee", "tags"])
+        await self.db.refresh(task, ["category", "creator", "assignee", "tags"])
         await self.db.commit()
         return self._task_out(task)
 
@@ -168,6 +168,8 @@ class TaskService:
             status=task.status,
             start_date=task.start_date,
             due_date=task.due_date,
+            created_at=task.created_at,
+            creator_username=task.creator.username,
             category_slug=task.category.slug,
             assignee_username=task.assignee.username if task.assignee else None,
             tags=[TagOut(name=t.name, color=t.color) for t in task.tags],

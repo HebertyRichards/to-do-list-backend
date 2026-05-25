@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     cookie_domain: str = Field(default="")
     cookie_secure: bool = Field(...)
     cookie_samesite: str = Field(...)
-
+    email_user: str = Field(...)
+    email_pass: str = Field(...)
+    
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"

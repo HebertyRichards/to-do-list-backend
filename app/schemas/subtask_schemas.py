@@ -35,4 +35,6 @@ class SubtaskOut(BaseModel):
     status: TaskStatus
     start_date: datetime
     due_date: datetime
+    created_at: datetime
+    creator_username: str
     assignee_username: str | None = None

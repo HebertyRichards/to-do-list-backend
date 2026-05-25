@@ -13,6 +13,7 @@ class SubtaskRepository:
             select(Subtask)
             .options(
                 selectinload(Subtask.task),
+                selectinload(Subtask.creator),
                 selectinload(Subtask.assignee),
             )
         )
@@ -31,7 +32,7 @@ class SubtaskRepository:
     async def create(self, subtask: Subtask) -> Subtask:
         self.db.add(subtask)
         await self.db.flush()
-        await self.db.refresh(subtask, ["task", "assignee"])
+        await self.db.refresh(subtask, ["task", "creator", "assignee"])
         return subtask
 
     async def delete(self, subtask: Subtask) -> None:

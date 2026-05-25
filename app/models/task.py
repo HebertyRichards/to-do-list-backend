@@ -45,6 +45,7 @@ class Task(Base, TimestampMixin):
     )
 
     category = relationship("Category", back_populates="tasks")
+    creator = relationship("User", foreign_keys=[creator_user_id])
     assignee = relationship("User", foreign_keys=[assignee_user_id])
     subtasks = relationship("Subtask", back_populates="task", cascade="all, delete-orphan")
     tags = relationship("Tag", secondary=task_tags, lazy="selectin")

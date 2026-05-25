@@ -84,7 +84,7 @@ class SubtaskService:
                 raise AppException(ErrorCode.USER_NOT_FOUND)
             subtask.assignee_user_id = assignee.id
             await self.db.flush()
-            await self.db.refresh(subtask, ["assignee"])
+            await self.db.refresh(subtask, ["creator", "assignee"])
         else:
             await self.db.flush()
         await self.db.commit()
@@ -117,5 +117,7 @@ class SubtaskService:
             status=subtask.status,
             start_date=subtask.start_date,
             due_date=subtask.due_date,
+            created_at=subtask.created_at,
+            creator_username=subtask.creator.username,
             assignee_username=subtask.assignee.username if subtask.assignee else None,
         )
