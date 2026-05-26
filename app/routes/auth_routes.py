@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
+
 from app.schemas.auth_schemas import (
     ForgotPasswordInput,
     ForgotPasswordResponse,
@@ -9,7 +10,6 @@ from app.schemas.auth_schemas import (
 )
 from app.services.auth_service import AuthService
 from app.utils.cookies import REFRESH_COOKIE
-from fastapi import Request
 
 auth_routes = APIRouter(prefix="/auth", tags=["auth"])
 

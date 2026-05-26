@@ -1,5 +1,7 @@
 from datetime import datetime
+
 from pydantic import BaseModel, Field
+
 from app.models.group_member import GroupRole
 from app.models.join_request import JoinRequestStatus
 

@@ -1,5 +1,7 @@
 import logging
+
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+
 from app.models import User
 from app.utils.dependencies import get_current_user_ws
 from app.ws.manager import notification_manager
@@ -26,4 +28,4 @@ async def ws_notifications(
         try:
             await websocket.close(code=1011)
         except Exception:
-            pass
+            logger.debug("Falha ao fechar websocket user_id=%s", current_user.id)

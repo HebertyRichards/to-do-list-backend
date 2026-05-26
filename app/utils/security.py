@@ -2,8 +2,10 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Literal, TypedDict, overload
+
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+
 from app.config.settings import get_settings
 from app.errors import AppException, ErrorCode
 
@@ -97,10 +99,10 @@ def decode_token(
         payload: AccessPayload | RefreshPayload = jwt.decode(
             token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
-    except jwt.ExpiredSignatureError:
-        raise AppException(ErrorCode.TOKEN_EXPIRED)
-    except JWTError:
-        raise AppException(ErrorCode.TOKEN_INVALID)
+    except jwt.ExpiredSignatureError as err:
+        raise AppException(ErrorCode.TOKEN_EXPIRED) from err
+    except JWTError as err:
+        raise AppException(ErrorCode.TOKEN_INVALID) from err
 
     if expected_type and payload.get("type") != expected_type:
         raise AppException(ErrorCode.TOKEN_INVALID)

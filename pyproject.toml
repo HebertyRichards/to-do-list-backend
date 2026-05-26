@@ -1,0 +1,53 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle — erros de estilo
+    "F",     # pyflakes — imports/vars não usados, nomes indefinidos
+    "I",     # isort — organização de imports
+    "N",     # pep8-naming — convenções PEP 8
+    "UP",    # pyupgrade — sintaxe Python moderna
+    "B",     # flake8-bugbear — armadilhas e bugs comuns
+    "S",     # flake8-bandit — segurança
+    "ASYNC", # flake8-async — antipadrões async
+    "C4",    # flake8-comprehensions — construções desnecessárias
+    "DTZ",   # flake8-datetimez — datetime sempre com timezone
+    "T20",   # flake8-print — print() em código de produção
+    "RUF",   # ruff-specific — regras extras focadas
+]
+ignore = [
+    "B008",   # FastAPI usa Depends() como default arg — padrão do framework
+    "S104",   # bind 0.0.0.0 — necessário em container Docker
+    "S105",   # falso positivo: nomes de enum com "TOKEN"/"PASSWORD" não são senhas hardcoded
+    "S324",   # SHA-256 para HMAC de token de reset não é fraco neste contexto
+    "RUF012", # ClassVar mutable default — gerenciado pelo SQLAlchemy
+    "N818",   # AppException é convenção estabelecida; renomear para AppError quebraria toda a base
+]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/*" = ["N999", "E501"]           # migrations geradas automaticamente
+"app/errors/codes.py" = ["E501"]         # tabela de dados — wrapping prejudica legibilidade
+"app/routes/*.py" = ["E501"]             # assinaturas FastAPI com múltiplos Depends() naturalmente longas
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+plugins = ["sqlalchemy.ext.mypy.plugin"]
+
+# — Equivalente ao strict: true do TypeScript —
+strict = true
+ignore_missing_imports = true        # bibliotecas sem stubs (jose, passlib)
+
+# FastAPI e SQLAlchemy usam decorators internamente sem anotação completa
+disallow_untyped_decorators = false
+
+# Aviso em vez de erro para retorno Any (comum em respostas de framework)
+warn_return_any = false

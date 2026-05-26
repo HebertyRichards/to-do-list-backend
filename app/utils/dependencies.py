@@ -1,4 +1,4 @@
-from fastapi import Depends, Request, WebSocket, Query
+from fastapi import Depends, Query, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database import get_db
@@ -13,8 +13,8 @@ async def _user_from_token(token: str, db: AsyncSession) -> User:
     payload = decode_token(token, expected_type="access")
     try:
         user_id = int(payload["sub"])
-    except (KeyError, ValueError, TypeError):
-        raise AppException(ErrorCode.TOKEN_INVALID)
+    except (KeyError, ValueError, TypeError) as err:
+        raise AppException(ErrorCode.TOKEN_INVALID) from err
 
     user = await UserRepository(db).get_by_id(user_id)
     if user is None:

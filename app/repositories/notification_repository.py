@@ -1,6 +1,8 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timezone
+
 from app.models import Notification
 
 

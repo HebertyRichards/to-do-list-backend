@@ -1,7 +1,7 @@
 from sqlalchemy import CheckConstraint, Column, ForeignKey, String, Table, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
-from app.models.base import Base, TimestampMixin
 
+from app.models.base import Base, TimestampMixin
 
 task_tags = Table(
     "task_tags",

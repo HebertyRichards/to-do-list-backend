@@ -2,15 +2,16 @@ import hashlib
 import logging
 import secrets as _secrets
 from datetime import datetime, timezone
+
 from fastapi import Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database import get_db
+from app.config.redis_client import get_redis
 from app.config.settings import get_settings
 from app.errors import AppException, ErrorCode
 from app.models import User
 from app.repositories.user_repository import UserRepository
-from app.config.redis_client import get_redis
 from app.schemas.auth_schemas import (
     CurrentUser,
     ForgotPasswordInput,
@@ -106,8 +107,8 @@ class AuthService:
         try:
             user_id = int(payload["sub"])
             access_expires_at = datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc)
-        except (KeyError, ValueError, TypeError):
-            raise AppException(ErrorCode.TOKEN_INVALID)
+        except (KeyError, ValueError, TypeError) as err:
+            raise AppException(ErrorCode.TOKEN_INVALID) from err
 
         user = await self.users.get_by_id(user_id)
         if user is None:
@@ -120,7 +121,7 @@ class AuthService:
                 refresh_payload = decode_token(refresh_token, expected_type="refresh")
                 session_expires_at = datetime.fromtimestamp(int(refresh_payload["exp"]), tz=timezone.utc)
             except Exception:
-                pass
+                logger.debug("Refresh token inválido, usando expiração do access token")
 
         return SessionInfo(
             user=CurrentUser.model_validate(user),

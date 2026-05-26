@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, status
+
 from app.models import User
 from app.schemas.group_schemas import (
     GroupCreate,

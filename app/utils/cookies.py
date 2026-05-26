@@ -1,6 +1,6 @@
 from fastapi import Response
-from app.config.settings import get_settings
 
+from app.config.settings import get_settings
 
 ACCESS_COOKIE = "tdl_access"
 REFRESH_COOKIE = "tdl_refresh"

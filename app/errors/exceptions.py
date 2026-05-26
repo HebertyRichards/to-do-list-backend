@@ -1,4 +1,4 @@
-from app.errors.codes import ErrorCode, ERROR_CATALOG
+from app.errors.codes import ERROR_CATALOG, ErrorCode
 
 
 class AppException(Exception):

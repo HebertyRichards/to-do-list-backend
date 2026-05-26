@@ -1,8 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.models import Tag, Task
-from app.models.task import task_tags
+
+from app.models import Task
 
 
 class TaskRepository:

@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator, model_validator
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 _PASSWORD_RULES = [
     (r"[A-Z]", "A senha deve conter ao menos uma letra maiúscula"),

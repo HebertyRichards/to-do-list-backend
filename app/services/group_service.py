@@ -1,8 +1,10 @@
 import json
 from datetime import datetime, timedelta, timezone
+
 from fastapi import Depends
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.database import get_db
 from app.config.redis_client import get_redis
 from app.errors import AppException, ErrorCode
@@ -13,7 +15,6 @@ from app.models.notification import NotificationType
 from app.repositories.group_repository import GroupRepository
 from app.repositories.notification_repository import NotificationRepository
 from app.repositories.user_repository import UserRepository
-from app.ws.manager import notification_manager
 from app.schemas.group_schemas import (
     GroupCreate,
     GroupCreated,
@@ -23,7 +24,8 @@ from app.schemas.group_schemas import (
     JoinGroupInput,
     JoinRequestOut,
 )
-from app.utils.security import generate_group_key, generate_slug, hash_group_key, verify_group_key
+from app.utils.security import generate_group_key, generate_slug, hash_group_key
+from app.ws.manager import notification_manager
 
 JOIN_REQUEST_TTL_DAYS = 3
 
@@ -74,7 +76,9 @@ class GroupService:
             raise AppException(ErrorCode.GROUP_NOT_FOUND)
         if not await self.repo.get_member(group.id, user.id):
             raise AppException(ErrorCode.NOT_GROUP_MEMBER)
-        return GroupOut(slug=group.slug, name=group.name, description=group.description, member_count=len(group.members))
+        return GroupOut(
+            slug=group.slug, name=group.name, description=group.description, member_count=len(group.members)
+        )
 
     async def update_group(self, admin: User, group_slug: str, data: GroupUpdate) -> GroupOut:
         group = await self.repo.get_by_slug_with_members(group_slug)
@@ -88,7 +92,9 @@ class GroupService:
             group.description = data.description
         await self.db.flush()
         await self.db.commit()
-        return GroupOut(slug=group.slug, name=group.name, description=group.description, member_count=len(group.members))
+        return GroupOut(
+            slug=group.slug, name=group.name, description=group.description, member_count=len(group.members)
+        )
 
     async def request_join(self, user: User, data: JoinGroupInput) -> dict:
         key_hash = hash_group_key(data.key)

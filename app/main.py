@@ -1,20 +1,20 @@
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config.redis_client import close_redis, init_redis
 from app.config.settings import get_settings
-from app.config.redis_client import init_redis, close_redis
 from app.errors import register_exception_handlers
 from app.routes.auth_routes import auth_routes
-from app.routes.user_routes import user_routes
 from app.routes.category_routes import category_routes
-from app.routes.task_routes import task_routes
-from app.routes.subtask_routes import subtask_routes
 from app.routes.group_routes import group_routes
 from app.routes.notification_routes import notification_routes
+from app.routes.subtask_routes import subtask_routes
+from app.routes.task_routes import task_routes
+from app.routes.user_routes import user_routes
 from app.ws.routes import ws_routes
-
 
 settings = get_settings()
 

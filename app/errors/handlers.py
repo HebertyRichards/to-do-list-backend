@@ -1,9 +1,11 @@
 import logging
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+
+from app.errors.codes import ERROR_CATALOG, ErrorCode
 from app.errors.exceptions import AppException
-from app.errors.codes import ErrorCode, ERROR_CATALOG
 
 logger = logging.getLogger(__name__)
 

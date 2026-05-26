@@ -1,6 +1,7 @@
 from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.database import get_db
 from app.errors import AppException, ErrorCode
 from app.models import Tag, Task, User

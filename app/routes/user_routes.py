@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+
 from app.models import User
 from app.schemas.user_schemas import UpdateProfileInput, UserProfile
 from app.services.user_service import UserService

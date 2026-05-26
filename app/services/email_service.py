@@ -1,4 +1,5 @@
 import logging
+
 from app.config.email import send_email
 
 logger = logging.getLogger(__name__)
