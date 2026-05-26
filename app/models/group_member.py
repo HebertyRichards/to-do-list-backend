@@ -1,7 +1,9 @@
 import enum
+import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -19,8 +21,11 @@ class GroupMember(Base):
     group_id: Mapped[int] = mapped_column(
         ForeignKey("app.groups.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("accounts.users.id", ondelete="CASCADE"), index=True, nullable=False
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
     )
     role: Mapped[GroupRole] = mapped_column(
         Enum(GroupRole, name="group_role"), default=GroupRole.member, nullable=False

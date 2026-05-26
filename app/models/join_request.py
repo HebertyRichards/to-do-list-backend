@@ -1,7 +1,9 @@
 import enum
+import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Index, String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -22,8 +24,11 @@ class JoinRequest(Base, TimestampMixin):
     group_id: Mapped[int] = mapped_column(
         ForeignKey("app.groups.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("accounts.users.id", ondelete="CASCADE"), index=True, nullable=False
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
     )
     status: Mapped[JoinRequestStatus] = mapped_column(
         Enum(JoinRequestStatus, name="join_request_status"),

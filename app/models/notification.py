@@ -1,7 +1,9 @@
 import enum
+import uuid
 from datetime import datetime
 
 from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -22,8 +24,11 @@ class Notification(Base, TimestampMixin):
     __table_args__ = {"schema": "app"}
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("accounts.users.id", ondelete="CASCADE"), index=True, nullable=False
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
     )
     type: Mapped[NotificationType] = mapped_column(
         Enum(NotificationType, name="notification_type"), nullable=False

@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select, update
@@ -10,7 +11,7 @@ class NotificationRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def list_for_user(self, user_id: int, limit: int = 50) -> list[Notification]:
+    async def list_for_user(self, user_id: uuid.UUID, limit: int = 50) -> list[Notification]:
         stmt = (
             select(Notification)
             .where(Notification.user_id == user_id)
@@ -25,7 +26,7 @@ class NotificationRepository:
         await self.db.refresh(notification)
         return notification
 
-    async def mark_read(self, user_id: int, notification_id: int) -> None:
+    async def mark_read(self, user_id: uuid.UUID, notification_id: int) -> None:
         stmt = (
             update(Notification)
             .where(Notification.id == notification_id, Notification.user_id == user_id)
@@ -33,7 +34,7 @@ class NotificationRepository:
         )
         await self.db.execute(stmt)
 
-    async def mark_all_read(self, user_id: int) -> None:
+    async def mark_all_read(self, user_id: uuid.UUID) -> None:
         stmt = (
             update(Notification)
             .where(Notification.user_id == user_id, Notification.read_at.is_(None))

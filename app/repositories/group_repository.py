@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -31,7 +32,7 @@ class GroupRepository:
         stmt = select(Group).where(Group.key_hash == key_hash)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def get_member(self, group_id: int, user_id: int) -> GroupMember | None:
+    async def get_member(self, group_id: int, user_id: uuid.UUID) -> GroupMember | None:
         stmt = select(GroupMember).where(
             GroupMember.group_id == group_id,
             GroupMember.user_id == user_id,
@@ -47,7 +48,7 @@ class GroupRepository:
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
-    async def list_for_user(self, user_id: int) -> list[Group]:
+    async def list_for_user(self, user_id: uuid.UUID) -> list[Group]:
         stmt = (
             select(Group)
             .join(GroupMember, GroupMember.group_id == Group.id)
@@ -57,7 +58,7 @@ class GroupRepository:
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
-    async def get_pending_request(self, group_id: int, user_id: int) -> JoinRequest | None:
+    async def get_pending_request(self, group_id: int, user_id: uuid.UUID) -> JoinRequest | None:
         stmt = select(JoinRequest).where(
             JoinRequest.group_id == group_id,
             JoinRequest.user_id == user_id,

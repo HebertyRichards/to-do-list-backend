@@ -58,6 +58,15 @@ class ForgotPasswordResponse(BaseModel):
     message: str
 
 
+class VerifyEmailInput(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class ResendVerificationInput(BaseModel):
+    email: EmailStr
+
+
 class ResetPasswordInput(BaseModel):
     email: EmailStr
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")

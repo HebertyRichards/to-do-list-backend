@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -141,7 +143,7 @@ class TaskService:
         return task
 
     async def _resolve_or_create_tags(
-        self, tag_names: list[str], owner_user_id: int | None, group_id: int | None
+        self, tag_names: list[str], owner_user_id: uuid.UUID | None, group_id: int | None
     ) -> list[Tag]:
         if not tag_names:
             return []

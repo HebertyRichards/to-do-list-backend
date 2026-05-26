@@ -1,7 +1,9 @@
 import enum
+import uuid
 from datetime import datetime
 
 from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -33,17 +35,26 @@ class Task(Base, TimestampMixin):
     category_id: Mapped[int] = mapped_column(
         ForeignKey("app.categories.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    creator_user_id: Mapped[int] = mapped_column(
-        ForeignKey("accounts.users.id", ondelete="CASCADE"), index=True, nullable=False
+    creator_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
     )
-    owner_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("accounts.users.id", ondelete="CASCADE"), nullable=True, index=True
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     group_id: Mapped[int | None] = mapped_column(
         ForeignKey("app.groups.id", ondelete="CASCADE"), nullable=True, index=True
     )
-    assignee_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("accounts.users.id", ondelete="SET NULL"), nullable=True, index=True
+    assignee_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     category = relationship("Category", back_populates="tasks")

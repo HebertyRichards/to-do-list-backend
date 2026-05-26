@@ -1,4 +1,7 @@
+import uuid
+
 from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -15,8 +18,11 @@ class Group(Base, TimestampMixin):
 
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
 
-    admin_user_id: Mapped[int] = mapped_column(
-        ForeignKey("accounts.users.id", ondelete="CASCADE"), nullable=False, index=True
+    admin_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")

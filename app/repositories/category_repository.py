@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +17,7 @@ class CategoryRepository:
         stmt = select(Category).where(Category.slug == slug)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def list_for_user(self, user_id: int) -> list[Category]:
+    async def list_for_user(self, user_id: uuid.UUID) -> list[Category]:
         stmt = select(Category).where(Category.owner_user_id == user_id).order_by(Category.created_at)
         return list((await self.db.execute(stmt)).scalars().all())
 

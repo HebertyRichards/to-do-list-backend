@@ -1,4 +1,5 @@
 import json
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends
@@ -290,7 +291,7 @@ class GroupService:
                 "group_name": group.name,
             })
 
-    async def _delete_user_tasks_in_group(self, user_id: int, group_id: int) -> None:
+    async def _delete_user_tasks_in_group(self, user_id: uuid.UUID, group_id: int) -> None:
         user_task_ids_subq = (
             select(Task.id)
             .where(Task.group_id == group_id, Task.creator_user_id == user_id)

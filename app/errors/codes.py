@@ -51,6 +51,9 @@ class ErrorCode(str, Enum):
     VERIFY_CODE_INVALID = "VERIFY_CODE_INVALID"
     VERIFY_CODE_EXPIRED = "VERIFY_CODE_EXPIRED"
 
+    EMAIL_NOT_VERIFIED = "EMAIL_NOT_VERIFIED"
+    EMAIL_ALREADY_VERIFIED = "EMAIL_ALREADY_VERIFIED"
+
     TOO_MANY_REQUESTS = "TOO_MANY_REQUESTS"
 
     DATABASE_ERROR = "DATABASE_ERROR"
@@ -98,6 +101,9 @@ ERROR_CATALOG: dict[ErrorCode, ErrorSpec] = {
 
     ErrorCode.VERIFY_CODE_INVALID: ErrorSpec("VERIFY_CODE_INVALID", 400, "Codigo invalido."),
     ErrorCode.VERIFY_CODE_EXPIRED: ErrorSpec("VERIFY_CODE_EXPIRED", 410, "Codigo expirado. Solicite um novo."),
+
+    ErrorCode.EMAIL_NOT_VERIFIED: ErrorSpec("EMAIL_NOT_VERIFIED", 403, "Email nao verificado. Confirme seu email para entrar."),
+    ErrorCode.EMAIL_ALREADY_VERIFIED: ErrorSpec("EMAIL_ALREADY_VERIFIED", 409, "Email ja verificado."),
 
     ErrorCode.TOO_MANY_REQUESTS: ErrorSpec("TOO_MANY_REQUESTS", 429, "Muitas requisicoes. Tente mais tarde."),
 

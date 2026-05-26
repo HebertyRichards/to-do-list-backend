@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import uuid
 
 from fastapi import WebSocket
 
@@ -9,10 +10,10 @@ logger = logging.getLogger(__name__)
 
 class NotificationManager:
     def __init__(self) -> None:
-        self._connections: dict[int, list[WebSocket]] = {}
+        self._connections: dict[uuid.UUID, list[WebSocket]] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(self, websocket: WebSocket, user_id: int) -> None:
+    async def connect(self, websocket: WebSocket, user_id: uuid.UUID) -> None:
         await websocket.accept()
         async with self._lock:
             if user_id not in self._connections:
@@ -21,7 +22,7 @@ class NotificationManager:
                 self._connections[user_id].append(websocket)
         logger.debug("WS conectado user_id=%s", user_id)
 
-    async def disconnect(self, websocket: WebSocket, user_id: int) -> None:
+    async def disconnect(self, websocket: WebSocket, user_id: uuid.UUID) -> None:
         async with self._lock:
             conns = self._connections.get(user_id, [])
             if websocket in conns:
@@ -30,7 +31,7 @@ class NotificationManager:
                 del self._connections[user_id]
         logger.debug("WS desconectado user_id=%s", user_id)
 
-    async def push(self, user_id: int, payload: dict[str, object]) -> None:
+    async def push(self, user_id: uuid.UUID, payload: dict[str, object]) -> None:
         async with self._lock:
             conns = list(self._connections.get(user_id, []))
 

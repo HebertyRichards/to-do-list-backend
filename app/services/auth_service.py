@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import secrets as _secrets
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import Depends, Request, Response
@@ -18,8 +19,10 @@ from app.schemas.auth_schemas import (
     ForgotPasswordResponse,
     LoginInput,
     RegisterInput,
+    ResendVerificationInput,
     ResetPasswordInput,
     SessionInfo,
+    VerifyEmailInput,
 )
 from app.services.email_service import EmailService
 from app.utils.cookies import (
@@ -39,6 +42,7 @@ from app.utils.security import (
 logger = logging.getLogger(__name__)
 
 _RESET_TTL = 600
+_VERIFY_TTL = 3600
 
 
 def _make_code() -> str:
@@ -56,7 +60,7 @@ class AuthService:
         self.settings = get_settings()
         self.email = EmailService()
 
-    async def register(self, data: RegisterInput, response: Response) -> SessionInfo:
+    async def register(self, data: RegisterInput) -> CurrentUser:
         if await self.users.get_by_email(data.email):
             raise AppException(ErrorCode.EMAIL_ALREADY_REGISTERED)
         if await self.users.get_by_username(data.username):
@@ -68,14 +72,48 @@ class AuthService:
             hashed_password=hash_password(data.password),
         )
         user = await self.users.create(user)
+        await self.db.commit()
+
+        await self._issue_verification_code(user)
+        return CurrentUser.model_validate(user)
+
+    async def verify_email(self, data: VerifyEmailInput, response: Response) -> SessionInfo:
+        user = await self.users.get_by_email(data.email)
+        if user is None:
+            raise AppException(ErrorCode.VERIFY_CODE_INVALID)
+        if user.verified_at is not None:
+            raise AppException(ErrorCode.EMAIL_ALREADY_VERIFIED)
+
+        redis = await get_redis()
+        stored = await redis.get(f"email_verify:{user.id}")
+        if stored is None:
+            raise AppException(ErrorCode.VERIFY_CODE_EXPIRED)
+
+        stored_hash = stored if isinstance(stored, str) else stored.decode()
+        if stored_hash != _hash_code(data.code):
+            raise AppException(ErrorCode.VERIFY_CODE_INVALID)
+
+        await redis.delete(f"email_verify:{user.id}")
+        user.verified_at = datetime.now(timezone.utc)
         session = await self._issue_session(user, response, remember_me=True)
         await self.db.commit()
         return session
+
+    async def resend_verification(self, data: ResendVerificationInput) -> None:
+        user = await self.users.get_by_email(data.email)
+        if user is None:
+            return
+        if user.verified_at is not None:
+            raise AppException(ErrorCode.EMAIL_ALREADY_VERIFIED)
+        await self._issue_verification_code(user)
 
     async def login(self, data: LoginInput, response: Response) -> SessionInfo:
         user = await self.users.get_by_email(data.email)
         if not user or not verify_password(data.password, user.hashed_password):
             raise AppException(ErrorCode.INVALID_CREDENTIALS)
+
+        if user.verified_at is None:
+            raise AppException(ErrorCode.EMAIL_NOT_VERIFIED)
 
         session = await self._issue_session(user, response, remember_me=data.remember_me)
         await self.db.commit()
@@ -90,7 +128,12 @@ class AuthService:
         if not sub:
             raise AppException(ErrorCode.TOKEN_INVALID)
 
-        user = await self.users.get_by_id(int(sub))
+        try:
+            user_id = uuid.UUID(sub)
+        except (ValueError, TypeError) as err:
+            raise AppException(ErrorCode.TOKEN_INVALID) from err
+
+        user = await self.users.get_by_id(user_id)
         if user is None:
             raise AppException(ErrorCode.UNAUTHENTICATED)
 
@@ -105,7 +148,7 @@ class AuthService:
 
         payload = decode_token(token, expected_type="access")
         try:
-            user_id = int(payload["sub"])
+            user_id = uuid.UUID(payload["sub"])
             access_expires_at = datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc)
         except (KeyError, ValueError, TypeError) as err:
             raise AppException(ErrorCode.TOKEN_INVALID) from err
@@ -161,8 +204,38 @@ class AuthService:
         clear_auth_cookies(response)
         await self.db.commit()
 
-    async def logout(self, refresh_token: str | None, response: Response) -> None:
+    async def logout(self, request: Request, response: Response) -> None:
+        user_id: uuid.UUID | None = None
+        for cookie_name, expected in (
+            (ACCESS_COOKIE, "access"),
+            (ACCESS_COOKIE.replace("access", "refresh"), "refresh"),
+        ):
+            token = request.cookies.get(cookie_name)
+            if not token:
+                continue
+            try:
+                payload = decode_token(token, expected_type=expected)
+                sub = payload.get("sub")
+                if sub:
+                    user_id = uuid.UUID(sub)
+                    break
+            except Exception:
+                continue
+
         clear_auth_cookies(response)
+
+        if user_id is not None:
+            try:
+                redis = await get_redis()
+                await redis.delete(f"pwd_reset:{user_id}", f"email_verify:{user_id}")
+            except Exception as e:
+                logger.warning("Redis cleanup falhou no logout: %s", e)
+
+    async def _issue_verification_code(self, user: User) -> None:
+        code = _make_code()
+        redis = await get_redis()
+        await redis.setex(f"email_verify:{user.id}", _VERIFY_TTL, _hash_code(code))
+        await self.email.send_email_verification_code(user.email, code)
 
     async def _issue_session(self, user: User, response: Response, remember_me: bool) -> SessionInfo:
         now = datetime.now(timezone.utc)

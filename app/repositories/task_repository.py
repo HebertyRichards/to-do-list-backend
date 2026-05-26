@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -28,7 +30,7 @@ class TaskRepository:
         stmt = self._base_query().where(Task.slug == slug)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def list_for_user(self, user_id: int) -> list[Task]:
+    async def list_for_user(self, user_id: uuid.UUID) -> list[Task]:
         stmt = self._base_query().where(Task.owner_user_id == user_id).order_by(Task.due_date)
         return list((await self.db.execute(stmt)).scalars().all())
 

@@ -1,4 +1,7 @@
+import uuid
+
 from sqlalchemy import CheckConstraint, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -12,8 +15,11 @@ class Category(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
-    owner_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("accounts.users.id", ondelete="CASCADE"), nullable=True, index=True
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     group_id: Mapped[int | None] = mapped_column(
         ForeignKey("app.groups.id", ondelete="CASCADE"), nullable=True, index=True

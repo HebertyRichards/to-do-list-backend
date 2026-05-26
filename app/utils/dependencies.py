@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import Depends, Query, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +14,7 @@ from app.utils.security import decode_token
 async def _user_from_token(token: str, db: AsyncSession) -> User:
     payload = decode_token(token, expected_type="access")
     try:
-        user_id = int(payload["sub"])
+        user_id = uuid.UUID(payload["sub"])
     except (KeyError, ValueError, TypeError) as err:
         raise AppException(ErrorCode.TOKEN_INVALID) from err
 

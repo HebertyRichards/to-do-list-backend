@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Depends, Request, Response, status
 
 from app.schemas.auth_schemas import (
+    CurrentUser,
     ForgotPasswordInput,
     ForgotPasswordResponse,
     LoginInput,
     RegisterInput,
+    ResendVerificationInput,
     ResetPasswordInput,
     SessionInfo,
+    VerifyEmailInput,
 )
 from app.services.auth_service import AuthService
 from app.utils.cookies import REFRESH_COOKIE
@@ -14,9 +17,19 @@ from app.utils.cookies import REFRESH_COOKIE
 auth_routes = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@auth_routes.post("/register", response_model=SessionInfo, status_code=status.HTTP_201_CREATED)
-async def register(data: RegisterInput, response: Response, service: AuthService = Depends()):
-    return await service.register(data, response)
+@auth_routes.post("/register", response_model=CurrentUser, status_code=status.HTTP_201_CREATED)
+async def register(data: RegisterInput, service: AuthService = Depends()):
+    return await service.register(data)
+
+
+@auth_routes.post("/verify-email", response_model=SessionInfo)
+async def verify_email(data: VerifyEmailInput, response: Response, service: AuthService = Depends()):
+    return await service.verify_email(data, response)
+
+
+@auth_routes.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
+async def resend_verification(data: ResendVerificationInput, service: AuthService = Depends()):
+    await service.resend_verification(data)
 
 
 @auth_routes.post("/login", response_model=SessionInfo)
@@ -32,8 +45,7 @@ async def refresh(request: Request, response: Response, service: AuthService = D
 
 @auth_routes.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(request: Request, response: Response, service: AuthService = Depends()):
-    token = request.cookies.get(REFRESH_COOKIE)
-    await service.logout(token, response)
+    await service.logout(request, response)
 
 
 @auth_routes.get("/session", response_model=SessionInfo)

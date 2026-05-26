@@ -1,6 +1,8 @@
+import uuid
 from datetime import datetime
 
 from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -27,11 +29,17 @@ class Subtask(Base, TimestampMixin):
     task_id: Mapped[int] = mapped_column(
         ForeignKey("app.tasks.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    creator_user_id: Mapped[int] = mapped_column(
-        ForeignKey("accounts.users.id", ondelete="CASCADE"), nullable=False, index=True
+    creator_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
-    assignee_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("accounts.users.id", ondelete="SET NULL"), nullable=True, index=True
+    assignee_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     task = relationship("Task", back_populates="subtasks")
