@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,7 +31,12 @@ class Settings(BaseSettings):
     cookie_samesite: str = Field(...)
     email_user: str = Field(...)
     email_pass: str = Field(...)
-    
+
+    @field_validator("email_pass", "email_user", mode="before")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return v.strip() if isinstance(v, str) else v
+
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"

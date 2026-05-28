@@ -26,7 +26,10 @@ class SubtaskUpdate(BaseModel):
     start_date: datetime | None = None
     due_date: datetime | None = None
     status: TaskStatus | None = None
-    assignee_username: str | None = None
+    assignee_username: str | None = Field(
+        default=None,
+        description="Omita ou envie null para não alterar. Envie string vazia para desatribuir.",
+    )
 
 
 class SubtaskOut(BaseModel):

@@ -4,18 +4,30 @@ services:
     restart: unless-stopped
     networks:
       - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   backend:
     build: .
     restart: unless-stopped
     env_file: .env
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     networks:
       - internal
       - public
     ports:
-      - "8000:8000"
+      - "${APP_PORT}:${APP_PORT}"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os, urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ[\\\"APP_PORT\\\"]}/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   frontend:
     build:
@@ -24,11 +36,12 @@ services:
     restart: unless-stopped
     env_file: ../to-do-list/.env
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - public
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
 
 networks:
   internal:

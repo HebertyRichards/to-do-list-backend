@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
 
+from app.models import User
 from app.schemas.auth_schemas import (
     CurrentUser,
+    DeleteAccountInput,
     ForgotPasswordInput,
     ForgotPasswordResponse,
     LoginInput,
@@ -13,13 +15,18 @@ from app.schemas.auth_schemas import (
 )
 from app.services.auth_service import AuthService
 from app.utils.cookies import REFRESH_COOKIE
+from app.utils.dependencies import get_current_user
 
 auth_routes = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @auth_routes.post("/register", response_model=CurrentUser, status_code=status.HTTP_201_CREATED)
-async def register(data: RegisterInput, service: AuthService = Depends()):
-    return await service.register(data)
+async def register(
+    data: RegisterInput,
+    background_tasks: BackgroundTasks,
+    service: AuthService = Depends(),
+):
+    return await service.register(data, background_tasks)
 
 
 @auth_routes.post("/verify-email", response_model=SessionInfo)
@@ -28,8 +35,12 @@ async def verify_email(data: VerifyEmailInput, response: Response, service: Auth
 
 
 @auth_routes.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
-async def resend_verification(data: ResendVerificationInput, service: AuthService = Depends()):
-    await service.resend_verification(data)
+async def resend_verification(
+    data: ResendVerificationInput,
+    background_tasks: BackgroundTasks,
+    service: AuthService = Depends(),
+):
+    await service.resend_verification(data, background_tasks)
 
 
 @auth_routes.post("/login", response_model=SessionInfo)
@@ -54,10 +65,24 @@ async def session(request: Request, service: AuthService = Depends()):
 
 
 @auth_routes.post("/forgot-password", response_model=ForgotPasswordResponse)
-async def forgot_password(data: ForgotPasswordInput, service: AuthService = Depends()):
-    return await service.forgot_password(data)
+async def forgot_password(
+    data: ForgotPasswordInput,
+    background_tasks: BackgroundTasks,
+    service: AuthService = Depends(),
+):
+    return await service.forgot_password(data, background_tasks)
 
 
 @auth_routes.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
 async def reset_password(data: ResetPasswordInput, response: Response, service: AuthService = Depends()):
     await service.reset_password(data, response)
+
+
+@auth_routes.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    data: DeleteAccountInput,
+    response: Response,
+    user: User = Depends(get_current_user),
+    service: AuthService = Depends(),
+):
+    await service.delete_account(user, data, response)

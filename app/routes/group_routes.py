@@ -66,6 +66,11 @@ async def remove_member(group_slug: str, username: str, user: User = Depends(get
     await service.remove_member(user, group_slug, username)
 
 
+@group_routes.post("/{group_slug}/members/{username}/promote", status_code=status.HTTP_204_NO_CONTENT)
+async def promote_member(group_slug: str, username: str, user: User = Depends(get_current_user), service: GroupService = Depends()):
+    await service.promote_member(user, group_slug, username)
+
+
 @group_routes.delete("/{group_slug}/leave", status_code=status.HTTP_204_NO_CONTENT)
 async def leave_group(group_slug: str, user: User = Depends(get_current_user), service: GroupService = Depends()):
     await service.leave_group(user, group_slug)

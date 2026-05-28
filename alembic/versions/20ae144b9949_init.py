@@ -1,15 +1,15 @@
 """init
 
-Revision ID: 118243b0e1ab
+Revision ID: 20ae144b9949
 Revises: 
-Create Date: 2026-05-25 23:19:55.919278
+Create Date: 2026-05-27 22:04:23.381135
 
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = '118243b0e1ab'
+revision = '20ae144b9949'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -25,6 +25,7 @@ def upgrade() -> None:
     sa.Column('avatar_url', sa.String(length=500), nullable=True),
     sa.Column('onboarded', sa.Boolean(), nullable=False),
     sa.Column('verified_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('pwd_changed_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.PrimaryKeyConstraint('id'),

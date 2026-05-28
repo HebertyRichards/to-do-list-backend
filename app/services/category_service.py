@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.database import get_db
 from app.errors import AppException, ErrorCode
 from app.models import Category, User
+from app.models.group_member import GroupRole
 from app.repositories.category_repository import CategoryRepository
 from app.repositories.group_repository import GroupRepository
 from app.schemas.category_schemas import CategoryCreate, CategoryOut, CategoryUpdate
@@ -50,7 +51,6 @@ class CategoryService:
             cat.name = data.name
         if data.color is not None:
             cat.color = data.color
-        await self.db.flush()
         await self.db.commit()
         return CategoryOut.model_validate(cat)
 
@@ -63,10 +63,12 @@ class CategoryService:
         cat = await self.repo.get_by_slug(category_slug)
         if not cat:
             raise AppException(ErrorCode.CATEGORY_NOT_FOUND)
-        if cat.owner_user_id != user.id:
-            if cat.group_id:
-                if not await self.groups.get_member(cat.group_id, user.id):
-                    raise AppException(ErrorCode.NOT_GROUP_MEMBER)
-            else:
-                raise AppException(ErrorCode.FORBIDDEN)
+        if cat.group_id:
+            member = await self.groups.get_member(cat.group_id, user.id)
+            if not member:
+                raise AppException(ErrorCode.NOT_GROUP_MEMBER)
+            if member.role != GroupRole.admin:
+                raise AppException(ErrorCode.NOT_GROUP_ADMIN)
+        elif cat.owner_user_id != user.id:
+            raise AppException(ErrorCode.FORBIDDEN)
         return cat

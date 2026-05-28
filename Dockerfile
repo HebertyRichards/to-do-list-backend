@@ -37,4 +37,4 @@ ENV APP_PORT=8000
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT} --workers 1 --ws-ping-interval 20 --ws-ping-timeout 20"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-${APP_PORT:-8000}} --workers 1 --ws-ping-interval 20 --ws-ping-timeout 20"]

@@ -6,14 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database import get_db
 from app.errors import AppException, ErrorCode
-from app.models import Tag, Task, User
+from app.models import Category, Notification, Tag, Task, User
 from app.models.group_member import GroupRole
+from app.models.notification import NotificationType
 from app.repositories.category_repository import CategoryRepository
 from app.repositories.group_repository import GroupRepository
+from app.repositories.notification_repository import NotificationRepository
 from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.task_schemas import TagOut, TaskCreate, TaskOut, TaskUpdate
 from app.utils.security import generate_slug
+from app.ws.manager import notification_manager
 
 
 class TaskService:
@@ -22,6 +25,7 @@ class TaskService:
         self.repo = TaskRepository(db)
         self.cats = CategoryRepository(db)
         self.groups = GroupRepository(db)
+        self.notifs = NotificationRepository(db)
 
     async def create(self, user: User, data: TaskCreate) -> TaskOut:
         cat = await self.cats.get_by_slug(data.category_slug)
@@ -31,16 +35,12 @@ class TaskService:
         if cat.group_id:
             if not await self.groups.get_member(cat.group_id, user.id):
                 raise AppException(ErrorCode.NOT_GROUP_MEMBER)
+        elif cat.owner_user_id != user.id:
+            raise AppException(ErrorCode.FORBIDDEN)
 
-        assignee_user_id = None
-        if data.assignee_username:
-            user_repo = UserRepository(self.db)
-            assignee = await user_repo.get_by_username(data.assignee_username)
-            if not assignee:
-                raise AppException(ErrorCode.USER_NOT_FOUND)
-            if cat.group_id and not await self.groups.get_member(cat.group_id, assignee.id):
-                raise AppException(ErrorCode.ASSIGNEE_NOT_IN_GROUP)
-            assignee_user_id = assignee.id
+        assignee_user_id = await self._resolve_assignee(
+            data.assignee_username, group_id=cat.group_id
+        )
 
         tags = await self._resolve_or_create_tags(
             data.tag_names,
@@ -62,6 +62,10 @@ class TaskService:
             tags=tags,
         )
         task = await self.repo.create(task)
+
+        if assignee_user_id and assignee_user_id != user.id:
+            await self._notify_assignee(task, assignee_user_id, user.username)
+
         await self.db.commit()
         return self._task_out(task)
 
@@ -98,16 +102,19 @@ class TaskService:
         if data.status is not None:
             task.status = data.status
         if data.category_slug is not None:
-            cat = await self.cats.get_by_slug(data.category_slug)
-            if not cat:
+            new_cat = await self.cats.get_by_slug(data.category_slug)
+            if not new_cat:
                 raise AppException(ErrorCode.CATEGORY_NOT_FOUND)
-            task.category_id = cat.id
+            self._assert_category_matches_task_scope(new_cat, task)
+            task.category_id = new_cat.id
+
+        previous_assignee = task.assignee_user_id
         if data.assignee_username is not None:
-            user_repo = UserRepository(self.db)
-            assignee = await user_repo.get_by_username(data.assignee_username)
-            if not assignee:
-                raise AppException(ErrorCode.USER_NOT_FOUND)
-            task.assignee_user_id = assignee.id
+            new_assignee_id = await self._resolve_assignee(
+                data.assignee_username, group_id=task.group_id
+            )
+            task.assignee_user_id = new_assignee_id
+
         if data.tag_names is not None:
             task.tags = await self._resolve_or_create_tags(
                 data.tag_names,
@@ -117,6 +124,14 @@ class TaskService:
 
         await self.db.flush()
         await self.db.refresh(task, ["category", "creator", "assignee", "tags"])
+
+        if (
+            task.assignee_user_id
+            and task.assignee_user_id != previous_assignee
+            and task.assignee_user_id != user.id
+        ):
+            await self._notify_assignee(task, task.assignee_user_id, user.username)
+
         await self.db.commit()
         return self._task_out(task)
 
@@ -141,6 +156,47 @@ class TaskService:
         elif task.owner_user_id != user.id:
             raise AppException(ErrorCode.FORBIDDEN)
         return task
+
+    async def _resolve_assignee(
+        self, assignee_username: str | None, group_id: int | None
+    ) -> uuid.UUID | None:
+        if not assignee_username:
+            return None
+        user_repo = UserRepository(self.db)
+        assignee = await user_repo.get_by_username(assignee_username)
+        if not assignee:
+            raise AppException(ErrorCode.USER_NOT_FOUND)
+        if group_id and not await self.groups.get_member(group_id, assignee.id):
+            raise AppException(ErrorCode.ASSIGNEE_NOT_IN_GROUP)
+        return assignee.id
+
+    @staticmethod
+    def _assert_category_matches_task_scope(new_cat: Category, task: Task) -> None:
+        if task.group_id is not None:
+            if new_cat.group_id != task.group_id:
+                raise AppException(ErrorCode.FORBIDDEN, "Categoria fora do escopo do grupo.")
+        else:
+            if new_cat.owner_user_id != task.owner_user_id:
+                raise AppException(ErrorCode.FORBIDDEN, "Categoria fora do escopo do usuário.")
+
+    async def _notify_assignee(
+        self, task: Task, assignee_user_id: uuid.UUID, assigner_username: str
+    ) -> None:
+        notif = Notification(
+            user_id=assignee_user_id,
+            type=NotificationType.task_assigned,
+            title=f"{assigner_username} atribuiu uma tarefa a você: {task.title}",
+            payload={"task_slug": task.slug, "assigned_by": assigner_username},
+        )
+        await self.notifs.create(notif)
+        await notification_manager.push(
+            assignee_user_id,
+            {
+                "type": NotificationType.task_assigned.value,
+                "task_slug": task.slug,
+                "assigned_by": assigner_username,
+            },
+        )
 
     async def _resolve_or_create_tags(
         self, tag_names: list[str], owner_user_id: uuid.UUID | None, group_id: int | None

@@ -1,5 +1,5 @@
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 from alembic import context
 
 from app.config.settings import get_settings
@@ -49,6 +49,10 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        for schema in OUR_SCHEMAS:
+            connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+        connection.commit()
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import Depends, Query, Request, WebSocket
+from fastapi import Depends, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database import get_db
@@ -40,10 +40,9 @@ async def get_current_user(
 
 async def get_current_user_ws(
     websocket: WebSocket,
-    token_query: str | None = Query(default=None, alias="token"),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    token = token_query or websocket.cookies.get(ACCESS_COOKIE)
+    token = websocket.cookies.get(ACCESS_COOKIE)
     if not token:
         raise AppException(ErrorCode.UNAUTHENTICATED)
     return await _user_from_token(token, db)

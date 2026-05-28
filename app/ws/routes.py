@@ -22,8 +22,8 @@ async def ws_notifications(
             await websocket.receive_text()
     except WebSocketDisconnect:
         await notification_manager.disconnect(websocket, current_user.id)
-    except Exception as e:
-        logger.error(f"WS erro user_id={current_user.id}: {e}")
+    except Exception:
+        logger.exception("WS erro user_id=%s", current_user.id)
         await notification_manager.disconnect(websocket, current_user.id)
         try:
             await websocket.close(code=1011)

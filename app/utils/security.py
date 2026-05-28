@@ -23,6 +23,8 @@ class RefreshPayload(TypedDict):
     sub: str
     iat: int
     exp: int
+    sid: int
+    jti: str
     type: Literal["refresh"]
 
 
@@ -68,18 +70,30 @@ def create_access_token(subject: str) -> tuple[str, datetime]:
     return token, expires_at
 
 
-def create_refresh_token(subject: str) -> tuple[str, datetime]:
+def create_refresh_token(
+    subject: str,
+    session_started_at: datetime | None = None,
+) -> tuple[str, datetime, str, int]:
+    """Cria refresh token com expiração ABSOLUTA = session_started_at + refresh_token_days.
+
+    Em rotação, passe o mesmo `session_started_at` do refresh anterior — assim a duração
+    total de 30 dias da sessão não desliza. Retorna (token, expires_at, jti, sid).
+    """
     settings = get_settings()
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(days=settings.refresh_token_days)
+    sid_dt = session_started_at or now
+    expires_at = sid_dt + timedelta(days=settings.refresh_token_days)
+    jti = generate_jti()
     payload: RefreshPayload = {
         "sub": subject,
         "iat": int(now.timestamp()),
         "exp": int(expires_at.timestamp()),
+        "sid": int(sid_dt.timestamp()),
+        "jti": jti,
         "type": "refresh",
     }
     token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-    return token, expires_at
+    return token, expires_at, jti, int(sid_dt.timestamp())
 
 
 @overload

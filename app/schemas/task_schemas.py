@@ -31,7 +31,10 @@ class TaskUpdate(BaseModel):
     due_date: datetime | None = None
     status: TaskStatus | None = None
     category_slug: str | None = None
-    assignee_username: str | None = None
+    assignee_username: str | None = Field(
+        default=None,
+        description="Omita ou envie null para não alterar. Envie string vazia para desatribuir.",
+    )
     tag_names: list[str] | None = None
 
 

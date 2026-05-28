@@ -23,5 +23,8 @@ class User(Base, TimestampMixin):
     verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    pwd_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")

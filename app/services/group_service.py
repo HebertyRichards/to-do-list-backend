@@ -1,4 +1,3 @@
-import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -7,7 +6,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database import get_db
-from app.config.redis_client import get_redis
 from app.errors import AppException, ErrorCode
 from app.models import Group, GroupMember, JoinRequest, Notification, Subtask, Task, User
 from app.models.group_member import GroupRole
@@ -85,13 +83,11 @@ class GroupService:
         group = await self.repo.get_by_slug_with_members(group_slug)
         if not group:
             raise AppException(ErrorCode.GROUP_NOT_FOUND)
-        if group.admin_user_id != admin.id:
-            raise AppException(ErrorCode.NOT_GROUP_ADMIN)
+        await self._assert_admin(group, admin.id)
         if data.name is not None:
             group.name = data.name
         if data.description is not None:
             group.description = data.description
-        await self.db.flush()
         await self.db.commit()
         return GroupOut(
             slug=group.slug, name=group.name, description=group.description, member_count=len(group.members)
@@ -119,13 +115,6 @@ class GroupService:
         )
         req = await self.repo.create_join_request(req)
 
-        redis = await get_redis()
-        await redis.setex(
-            f"user:{user.id}:join_request:{req.slug}",
-            JOIN_REQUEST_TTL_DAYS * 86400,
-            json.dumps({"request_slug": req.slug, "user_id": user.id, "group_id": group.id}),
-        )
-
         notif = Notification(
             user_id=group.admin_user_id,
             type=NotificationType.join_request_created,
@@ -150,8 +139,7 @@ class GroupService:
         group = await self.repo.get_by_slug(group_slug)
         if not group:
             raise AppException(ErrorCode.GROUP_NOT_FOUND)
-        if group.admin_user_id != admin.id:
-            raise AppException(ErrorCode.NOT_GROUP_ADMIN)
+        await self._assert_admin(group, admin.id)
 
         req = await self.repo.get_request_by_slug(request_slug)
         if not req or req.group_id != group.id:
@@ -207,8 +195,7 @@ class GroupService:
         group = await self.repo.get_by_slug(group_slug)
         if not group:
             raise AppException(ErrorCode.GROUP_NOT_FOUND)
-        if group.admin_user_id != admin.id:
-            raise AppException(ErrorCode.NOT_GROUP_ADMIN)
+        await self._assert_admin(group, admin.id)
 
         reqs = await self.repo.list_pending_requests(group.id)
         return [
@@ -226,17 +213,21 @@ class GroupService:
         group = await self.repo.get_by_slug(group_slug)
         if not group:
             raise AppException(ErrorCode.GROUP_NOT_FOUND)
-        if group.admin_user_id != admin.id:
-            raise AppException(ErrorCode.NOT_GROUP_ADMIN)
+        await self._assert_admin(group, admin.id)
 
         user_repo = UserRepository(self.db)
         target = await user_repo.get_by_username(username)
         if not target:
             raise AppException(ErrorCode.USER_NOT_FOUND)
 
+        if target.id == group.admin_user_id:
+            raise AppException(ErrorCode.FORBIDDEN, "Não é possível remover o dono do grupo.")
+
         member = await self.repo.get_member(group.id, target.id)
         if not member:
             raise AppException(ErrorCode.NOT_GROUP_MEMBER)
+        if member.role == GroupRole.admin and admin.id != group.admin_user_id:
+            raise AppException(ErrorCode.FORBIDDEN, "Apenas o dono pode remover um admin.")
 
         await self._delete_user_tasks_in_group(target.id, group.id)
         await self.repo.remove_member(member)
@@ -290,6 +281,32 @@ class GroupService:
                 "group_slug": group.slug,
                 "group_name": group.name,
             })
+
+    async def promote_member(self, admin: User, group_slug: str, username: str) -> None:
+        group = await self.repo.get_by_slug(group_slug)
+        if not group:
+            raise AppException(ErrorCode.GROUP_NOT_FOUND)
+        await self._assert_admin(group, admin.id)
+
+        user_repo = UserRepository(self.db)
+        target = await user_repo.get_by_username(username)
+        if not target:
+            raise AppException(ErrorCode.USER_NOT_FOUND)
+
+        member = await self.repo.get_member(group.id, target.id)
+        if not member:
+            raise AppException(ErrorCode.NOT_GROUP_MEMBER)
+        if member.role == GroupRole.admin:
+            raise AppException(ErrorCode.CONFLICT, "Usuário já é admin do grupo.")
+
+        member.role = GroupRole.admin
+        await self.db.commit()
+
+    async def _assert_admin(self, group: Group, user_id: uuid.UUID) -> GroupMember:
+        member = await self.repo.get_member(group.id, user_id)
+        if not member or member.role != GroupRole.admin:
+            raise AppException(ErrorCode.NOT_GROUP_ADMIN)
+        return member
 
     async def _delete_user_tasks_in_group(self, user_id: uuid.UUID, group_id: int) -> None:
         user_task_ids_subq = (
