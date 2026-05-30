@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.config.settings import get_settings
 from app.errors.codes import ERROR_CATALOG, ErrorCode
 from app.errors.exceptions import AppException
 
@@ -27,12 +28,14 @@ async def app_exception_handler(request: Request, exc: AppException):
 
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    settings = get_settings()
+    details = None if settings.is_production else {"errors": exc.errors()}
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content=_payload(
             ErrorCode.VALIDATION_ERROR,
             ERROR_CATALOG[ErrorCode.VALIDATION_ERROR].message,
-            {"errors": exc.errors()},
+            details,
         ),
     )
 

@@ -174,6 +174,7 @@ class AuthService:
 
         redis = await get_redis()
         if await redis.exists(_denylist_key(jti)):
+            response.headers["Clear-Site-Data"] = '"cache", "storage"'
             clear_auth_cookies(response)
             raise AppException(ErrorCode.REFRESH_REUSE_DETECTED)
 
@@ -184,6 +185,7 @@ class AuthService:
         if user.pwd_changed_at is not None:
             pwd_changed_ts = int(user.pwd_changed_at.timestamp())
             if int(sid) < pwd_changed_ts:
+                response.headers["Clear-Site-Data"] = '"cache", "storage"'
                 clear_auth_cookies(response)
                 raise AppException(ErrorCode.REFRESH_REUSE_DETECTED)
 

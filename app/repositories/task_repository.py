@@ -19,6 +19,7 @@ class TaskRepository:
                 selectinload(Task.category),
                 selectinload(Task.creator),
                 selectinload(Task.assignee),
+                selectinload(Task.subtasks),
             )
         )
 
@@ -41,7 +42,7 @@ class TaskRepository:
     async def create(self, task: Task) -> Task:
         self.db.add(task)
         await self.db.flush()
-        await self.db.refresh(task, ["tags", "category", "creator", "assignee"])
+        await self.db.refresh(task, ["tags", "category", "creator", "assignee", "subtasks"])
         return task
 
     async def delete(self, task: Task) -> None:

@@ -56,3 +56,5 @@ class TaskOut(BaseModel):
     assignee_username: str | None = None
     assignee_avatar_url: str | None = None
     tags: list[TagOut] = Field(default_factory=list)
+    subtask_done_count: int = 0
+    subtask_total_count: int = 0

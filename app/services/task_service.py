@@ -9,6 +9,7 @@ from app.errors import AppException, ErrorCode
 from app.models import Category, Notification, Tag, Task, User
 from app.models.group_member import GroupRole
 from app.models.notification import NotificationType
+from app.models.task import TaskStatus
 from app.repositories.category_repository import CategoryRepository
 from app.repositories.group_repository import GroupRepository
 from app.repositories.notification_repository import NotificationRepository
@@ -123,7 +124,7 @@ class TaskService:
             )
 
         await self.db.flush()
-        await self.db.refresh(task, ["category", "creator", "assignee", "tags"])
+        await self.db.refresh(task, ["category", "creator", "assignee", "tags", "subtasks"])
 
         if (
             task.assignee_user_id
@@ -220,6 +221,8 @@ class TaskService:
 
     @staticmethod
     def _task_out(task: Task) -> TaskOut:
+        subtasks = task.subtasks
+        done_count = sum(1 for s in subtasks if s.status == TaskStatus.done)
         return TaskOut(
             slug=task.slug,
             title=task.title,
@@ -233,4 +236,6 @@ class TaskService:
             assignee_username=task.assignee.username if task.assignee else None,
             assignee_avatar_url=task.assignee.avatar_url if task.assignee else None,
             tags=[TagOut(name=t.name, color=t.color) for t in task.tags],
+            subtask_done_count=done_count,
+            subtask_total_count=len(subtasks),
         )
