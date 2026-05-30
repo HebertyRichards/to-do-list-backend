@@ -43,3 +43,4 @@ class SubtaskOut(BaseModel):
     created_at: datetime
     creator_username: str
     assignee_username: str | None = None
+    assignee_avatar_url: str | None = None

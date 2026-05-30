@@ -231,5 +231,6 @@ class TaskService:
             creator_username=task.creator.username,
             category_slug=task.category.slug,
             assignee_username=task.assignee.username if task.assignee else None,
+            assignee_avatar_url=task.assignee.avatar_url if task.assignee else None,
             tags=[TagOut(name=t.name, color=t.color) for t in task.tags],
         )

@@ -176,4 +176,5 @@ class SubtaskService:
             created_at=subtask.created_at,
             creator_username=subtask.creator.username,
             assignee_username=subtask.assignee.username if subtask.assignee else None,
+            assignee_avatar_url=subtask.assignee.avatar_url if subtask.assignee else None,
         )

@@ -54,4 +54,5 @@ class TaskOut(BaseModel):
     creator_username: str
     category_slug: str
     assignee_username: str | None = None
+    assignee_avatar_url: str | None = None
     tags: list[TagOut] = Field(default_factory=list)
