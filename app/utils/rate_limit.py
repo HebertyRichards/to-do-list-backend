@@ -1,6 +1,6 @@
 import logging
 
-from app.config.redis_client import get_redis
+from app.config.redis_client import get_redis, require_redis
 from app.errors import AppException, ErrorCode
 
 logger = logging.getLogger(__name__)
@@ -21,34 +21,51 @@ RESEND_VERIFICATION_WINDOW_SECONDS = 60 * 60
 VERIFY_CODE_MAX_ATTEMPTS = 5
 RESET_CODE_MAX_ATTEMPTS = 5
 
+GLOBAL_MAX_REQUESTS = 100
+GLOBAL_WINDOW_SECONDS = 60
 
-async def enforce_and_increment(key: str, max_attempts: int, ttl_seconds: int) -> None:
+
+async def enforce_global(identifier: str) -> None:
     redis = await get_redis()
+    key = f"rl:global:{identifier}"
+    try:
+        current = await redis.incr(key)
+        if current == 1:
+            await redis.expire(key, GLOBAL_WINDOW_SECONDS)
+    except Exception as e:
+        logger.warning("Rate limit global falhou em %s: %s", key, e)
+        return
+    if current > GLOBAL_MAX_REQUESTS:
+        raise AppException(ErrorCode.TOO_MANY_REQUESTS)
+
+
+async def enforce_and_increment(key: str, max_attempts: int, ttl_seconds: int, *, fail_open: bool = False) -> None:
+    redis = await get_redis() if fail_open else await require_redis()
     try:
         current = await redis.incr(key)
         if current == 1:
             await redis.expire(key, ttl_seconds)
-        if current > max_attempts:
-            raise AppException(ErrorCode.TOO_MANY_REQUESTS)
-    except AppException:
-        raise
     except Exception as e:
-        logger.warning("Rate limit Redis falhou em %s: %s", key, e)
+        if fail_open:
+            logger.warning("Rate limit best-effort falhou em %s: %s", key, e)
+            return
+        logger.error("Rate limit indisponivel em %s: %s", key, e)
+        raise AppException(ErrorCode.SERVICE_UNAVAILABLE) from e
+    if current > max_attempts:
+        raise AppException(ErrorCode.TOO_MANY_REQUESTS)
 
 
 async def check_only(key: str, max_attempts: int) -> None:
-    redis = await get_redis()
+    redis = await require_redis()
     try:
         raw = await redis.get(key)
-        if raw is None:
-            return
-        current = int(raw)
-        if current >= max_attempts:
-            raise AppException(ErrorCode.TOO_MANY_REQUESTS)
-    except AppException:
-        raise
     except Exception as e:
-        logger.warning("Rate limit check falhou em %s: %s", key, e)
+        logger.error("Rate limit check indisponivel em %s: %s", key, e)
+        raise AppException(ErrorCode.SERVICE_UNAVAILABLE) from e
+    if raw is None:
+        return
+    if int(raw) >= max_attempts:
+        raise AppException(ErrorCode.TOO_MANY_REQUESTS)
 
 
 async def increment_on_failure(key: str, ttl_seconds: int) -> None:

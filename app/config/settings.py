@@ -19,11 +19,14 @@ class Settings(BaseSettings):
     database_url_sync: str = Field(...)
 
     redis_url: str = Field(...)
+    redis_enabled: bool = Field(default=True)
 
     jwt_secret: str = Field(...)
     jwt_algorithm: str = Field(...)
     access_token_minutes: int = Field(...)
     refresh_token_days: int = Field(...)
+
+    trust_forwarded_for: bool = Field(default=False)
 
     frontend_origin: str = Field(...)
     cookie_domain: str = Field(default="")

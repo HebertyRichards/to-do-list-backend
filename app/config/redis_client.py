@@ -4,6 +4,7 @@ import logging
 import redis.asyncio
 
 from app.config.settings import get_settings
+from app.errors import AppException, ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,13 @@ _null_redis = NullRedis()
 async def init_redis() -> None:
     global _redis, _redis_available
     settings = get_settings()
+
+    if not settings.redis_enabled:
+        _redis = None
+        _redis_available = False
+        logger.warning("Redis desativado via REDIS_ENABLED=false. Operando com NullRedis.")
+        return
+
     url = settings.redis_url
 
     for attempt in range(1, MAX_RETRIES + 1):
@@ -93,6 +101,16 @@ async def init_redis() -> None:
 async def get_redis() -> redis.asyncio.Redis | NullRedis:
     if not _redis_available or _redis is None:
         return _null_redis
+    return _redis
+
+
+def is_redis_available() -> bool:
+    return _redis_available and _redis is not None
+
+
+async def require_redis() -> redis.asyncio.Redis:
+    if not _redis_available or _redis is None:
+        raise AppException(ErrorCode.SERVICE_UNAVAILABLE)
     return _redis
 
 

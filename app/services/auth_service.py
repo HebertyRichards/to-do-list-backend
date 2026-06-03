@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import logging
 import secrets as _secrets
 import uuid
@@ -9,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database import get_db
-from app.config.redis_client import get_redis
+from app.config.redis_client import get_redis, require_redis
 from app.config.settings import get_settings
 from app.errors import AppException, ErrorCode
 from app.models import Group, GroupMember, User
@@ -56,7 +57,8 @@ def _make_code() -> str:
 
 
 def _hash_code(code: str) -> str:
-    return hashlib.sha256(code.encode()).hexdigest()
+    secret = get_settings().jwt_secret.encode()
+    return hmac.new(secret, code.encode(), hashlib.sha256).hexdigest()
 
 
 def _denylist_key(jti: str) -> str:
@@ -70,9 +72,7 @@ class AuthService:
         self.settings = get_settings()
         self.email = EmailService()
 
-    async def register(
-        self, data: RegisterInput, background_tasks: BackgroundTasks
-    ) -> CurrentUser:
+    async def register(self, data: RegisterInput, background_tasks: BackgroundTasks) -> CurrentUser:
         await rate_limit.enforce_and_increment(
             f"rl:register:{data.email}",
             rate_limit.REGISTER_MAX_ATTEMPTS,
@@ -105,13 +105,13 @@ class AuthService:
         attempts_key = f"rl:verify_code:{user.id}"
         await rate_limit.check_only(attempts_key, rate_limit.VERIFY_CODE_MAX_ATTEMPTS)
 
-        redis = await get_redis()
+        redis = await require_redis()
         stored = await redis.get(f"email_verify:{user.id}")
         if stored is None:
             raise AppException(ErrorCode.VERIFY_CODE_EXPIRED)
 
         stored_hash = stored if isinstance(stored, str) else stored.decode()
-        if stored_hash != _hash_code(data.code):
+        if not hmac.compare_digest(stored_hash, _hash_code(data.code)):
             await rate_limit.increment_on_failure(attempts_key, _VERIFY_TTL)
             raise AppException(ErrorCode.VERIFY_CODE_INVALID)
 
@@ -122,9 +122,7 @@ class AuthService:
         await self.db.commit()
         return session
 
-    async def resend_verification(
-        self, data: ResendVerificationInput, background_tasks: BackgroundTasks
-    ) -> None:
+    async def resend_verification(self, data: ResendVerificationInput, background_tasks: BackgroundTasks) -> None:
         await rate_limit.enforce_and_increment(
             f"rl:resend:{data.email}",
             rate_limit.RESEND_VERIFICATION_MAX_ATTEMPTS,
@@ -138,10 +136,13 @@ class AuthService:
         await self._issue_verification_code(user, background_tasks)
 
     async def login(self, data: LoginInput, response: Response) -> SessionInfo:
+        # Best-effort: o login deve continuar funcionando mesmo com o Redis fora.
+        # Nesse cenario perde-se a protecao de forca bruta, mas a autenticacao segue.
         await rate_limit.enforce_and_increment(
             f"rl:login:{data.email}",
             rate_limit.LOGIN_MAX_ATTEMPTS,
             rate_limit.LOGIN_WINDOW_SECONDS,
+            fail_open=True,
         )
 
         user = await self.users.get_by_email(data.email)
@@ -173,7 +174,12 @@ class AuthService:
             raise AppException(ErrorCode.TOKEN_INVALID) from err
 
         redis = await get_redis()
-        if await redis.exists(_denylist_key(jti)):
+        try:
+            reused = await redis.exists(_denylist_key(jti))
+        except Exception as e:
+            logger.warning("Denylist de refresh indisponivel (jti=%s): %s", jti, e)
+            reused = 0
+        if reused:
             response.headers["Clear-Site-Data"] = '"cache", "storage"'
             clear_auth_cookies(response)
             raise AppException(ErrorCode.REFRESH_REUSE_DETECTED)
@@ -189,12 +195,13 @@ class AuthService:
                 clear_auth_cookies(response)
                 raise AppException(ErrorCode.REFRESH_REUSE_DETECTED)
 
-        await redis.setex(_denylist_key(jti), _REFRESH_DENYLIST_TTL, "1")
+        try:
+            await redis.setex(_denylist_key(jti), _REFRESH_DENYLIST_TTL, "1")
+        except Exception as e:
+            logger.warning("Falha ao gravar denylist de refresh (jti=%s): %s", jti, e)
 
         session_started_at = datetime.fromtimestamp(int(sid), tz=timezone.utc)
-        new_session = await self._issue_session(
-            user, response, remember_me=True, session_started_at=session_started_at
-        )
+        new_session = await self._issue_session(user, response, remember_me=True, session_started_at=session_started_at)
         await self.db.commit()
         return new_session
 
@@ -238,15 +245,13 @@ class AuthService:
             rate_limit.FORGOT_PASSWORD_WINDOW_SECONDS,
         )
 
-        msg = ForgotPasswordResponse(
-            message="Se o email estiver cadastrado, você receberá um código."
-        )
+        msg = ForgotPasswordResponse(message="Se o email estiver cadastrado, você receberá um código.")
         user = await self.users.get_by_email(data.email)
         if user is None:
             return msg
 
         code = _make_code()
-        redis = await get_redis()
+        redis = await require_redis()
         await redis.setex(f"pwd_reset:{user.id}", _RESET_TTL, _hash_code(code))
 
         background_tasks.add_task(self.email.send_password_reset_code, data.email, code)
@@ -260,13 +265,13 @@ class AuthService:
         attempts_key = f"rl:reset_code:{user.id}"
         await rate_limit.check_only(attempts_key, rate_limit.RESET_CODE_MAX_ATTEMPTS)
 
-        redis = await get_redis()
+        redis = await require_redis()
         stored = await redis.get(f"pwd_reset:{user.id}")
         if stored is None:
             raise AppException(ErrorCode.VERIFY_CODE_EXPIRED)
 
         stored_hash = stored if isinstance(stored, str) else stored.decode()
-        if stored_hash != _hash_code(data.code):
+        if not hmac.compare_digest(stored_hash, _hash_code(data.code)):
             await rate_limit.increment_on_failure(attempts_key, _RESET_TTL)
             raise AppException(ErrorCode.VERIFY_CODE_INVALID)
 
@@ -277,9 +282,7 @@ class AuthService:
         clear_auth_cookies(response)
         await self.db.commit()
 
-    async def delete_account(
-        self, user: User, data: DeleteAccountInput, response: Response
-    ) -> None:
+    async def delete_account(self, user: User, data: DeleteAccountInput, response: Response) -> None:
         if not verify_password(data.password, user.hashed_password):
             raise AppException(ErrorCode.INVALID_CREDENTIALS)
 
@@ -320,15 +323,11 @@ class AuthService:
 
         clear_auth_cookies(response)
 
-    async def _issue_verification_code(
-        self, user: User, background_tasks: BackgroundTasks
-    ) -> None:
+    async def _issue_verification_code(self, user: User, background_tasks: BackgroundTasks) -> None:
         code = _make_code()
-        redis = await get_redis()
+        redis = await require_redis()
         await redis.setex(f"email_verify:{user.id}", _VERIFY_TTL, _hash_code(code))
-        background_tasks.add_task(
-            self.email.send_email_verification_code, user.email, code
-        )
+        background_tasks.add_task(self.email.send_email_verification_code, user.email, code)
 
     async def _issue_session(
         self,

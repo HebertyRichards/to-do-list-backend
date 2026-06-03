@@ -58,6 +58,7 @@ class ErrorCode(str, Enum):
 
     DATABASE_ERROR = "DATABASE_ERROR"
     INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
 
 
 ERROR_CATALOG: dict[ErrorCode, ErrorSpec] = {
@@ -109,4 +110,5 @@ ERROR_CATALOG: dict[ErrorCode, ErrorSpec] = {
 
     ErrorCode.DATABASE_ERROR: ErrorSpec("DATABASE_ERROR", 500, "Erro ao acessar dados."),
     ErrorCode.INTERNAL_SERVER_ERROR: ErrorSpec("INTERNAL_SERVER_ERROR", 500, "Erro interno do servidor."),
+    ErrorCode.SERVICE_UNAVAILABLE: ErrorSpec("SERVICE_UNAVAILABLE", 503, "Servico temporariamente indisponivel. Tente novamente."),
 }
