@@ -26,6 +26,24 @@ class EmailService:
             logger.exception("Falha ao enviar email de reset para %s", to)
             raise
 
+    async def send_account_exists_notice(self, to: str) -> None:
+        subject = "Tentativa de cadastro — To-Do List"
+        body = """
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+          <h2>Sua conta já existe</h2>
+          <p>Recebemos uma tentativa de cadastro com este email, mas ele já possui
+             uma conta. Se foi você, basta <strong>fazer login</strong> ou
+             <strong>redefinir sua senha</strong>.</p>
+          <p style="color:#71717a;font-size:0.85rem">Se não foi você, ignore este email —
+             nenhuma ação é necessária.</p>
+        </div>
+        """
+        try:
+            await send_email(subject=subject, recipients=[to], body=body)
+            logger.info("Aviso de conta existente enviado para %s", to)
+        except Exception:
+            logger.exception("Falha ao enviar aviso de conta existente para %s", to)
+
     async def send_email_verification_code(self, to: str, code: str) -> None:
         subject = "Confirme seu email — To-Do List"
         body = f"""

@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     refresh_token_days: int = Field(...)
 
     trust_forwarded_for: bool = Field(default=False)
+    trusted_proxy_count: int = Field(default=1)
 
     frontend_origin: str = Field(...)
     cookie_domain: str = Field(default="")

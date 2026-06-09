@@ -46,7 +46,10 @@ def _client_ip(request: Request) -> str:
     if settings.trust_forwarded_for:
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+            n = settings.trusted_proxy_count
+            if parts and n >= 1 and len(parts) >= n:
+                return parts[-n]
     return request.client.host if request.client else "unknown"
 
 

@@ -93,6 +93,8 @@ Crie um arquivo `.env` na raiz do backend. Todos os campos são obrigatórios.
 | `ACCESS_TOKEN_MINUTES` | FastAPI | Duração do access token |
 | `REFRESH_TOKEN_DAYS` | FastAPI | Duração absoluta da sessão |
 | `FRONTEND_ORIGIN` | FastAPI (CORS) | Origem permitida (sem `/` final) |
+| `TRUST_FORWARDED_FOR` | FastAPI (rate limit) | `true` só atrás de proxy reverso confiável que sobrescreve o `X-Forwarded-For`. Se o backend ficar exposto direto, mantenha `false` (senão o IP é spoofável) |
+| `TRUSTED_PROXY_COUNT` | FastAPI (rate limit) | Nº de proxies confiáveis à frente (padrão `1`). O IP real é o N-ésimo da direita no `X-Forwarded-For`; entradas à esquerda são forjáveis pelo cliente |
 | `COOKIE_DOMAIN` | FastAPI | Vazio em dev, domínio em prod |
 | `COOKIE_SECURE` | FastAPI | `false` em dev (http), `true` em prod (https) |
 | `COOKIE_SAMESITE` | FastAPI | `lax` (padrão) |

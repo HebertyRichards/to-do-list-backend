@@ -79,10 +79,16 @@ class AuthService:
             rate_limit.REGISTER_WINDOW_SECONDS,
         )
 
-        if await self.users.get_by_email(data.email):
-            raise AppException(ErrorCode.EMAIL_ALREADY_REGISTERED)
         if await self.users.get_by_username(data.username):
             raise AppException(ErrorCode.USERNAME_TAKEN)
+        if await self.users.get_by_email(data.email):
+            background_tasks.add_task(self.email.send_account_exists_notice, data.email)
+            return CurrentUser(
+                email=data.email,
+                username=data.username,
+                avatar_url=None,
+                onboarded=False,
+            )
 
         user = User(
             email=data.email,
