@@ -11,6 +11,7 @@ from app.errors import AppException, register_exception_handlers
 from app.routes.auth_routes import auth_routes
 from app.routes.category_routes import category_routes
 from app.routes.group_routes import group_routes
+from app.routes.habit_routes import habit_routes
 from app.routes.notification_routes import notification_routes
 from app.routes.subtask_routes import subtask_routes
 from app.routes.task_routes import task_routes
@@ -24,7 +25,6 @@ logging.basicConfig(
     level=settings.log_level,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -79,6 +79,7 @@ app.include_router(user_routes)
 app.include_router(category_routes)
 app.include_router(task_routes)
 app.include_router(subtask_routes)
+app.include_router(habit_routes)
 app.include_router(group_routes)
 app.include_router(notification_routes)
 app.include_router(ws_routes)

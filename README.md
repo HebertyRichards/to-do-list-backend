@@ -1,6 +1,6 @@
 # To-Do List — Backend
 
-API REST + WebSocket construída com **FastAPI**, **SQLAlchemy 2 async** e **PostgreSQL** (Neon). Suporta modo individual e modo grupo, autenticação JWT em cookies httpOnly, verificação de email, rate limiting por conta e notificações em tempo real.
+API REST + WebSocket construída com **FastAPI**, **SQLAlchemy 2 async** e **PostgreSQL** (Neon). Suporta modo individual, modo grupo e hábitos diários (recorrentes), autenticação JWT em cookies httpOnly, verificação de email, rate limiting por conta e notificações em tempo real.
 
 ---
 
@@ -319,8 +319,8 @@ seu-dominio.com {
 
 | Método | Path | Auth | Descrição |
 |---|---|---|---|
-| `GET` | `/users/me` | ✓ | Perfil do usuário |
-| `PATCH` | `/users/me` | ✓ | Atualizar perfil |
+| `GET` | `/users/me` | ✓ | Perfil do usuário (inclui `timezone`) |
+| `PATCH` | `/users/me` | ✓ | Atualizar perfil (`username`, `avatar_url`, `timezone` IANA, `onboarded`) |
 
 ### Tarefas — `/tasks`
 
@@ -352,6 +352,24 @@ seu-dominio.com {
 | `GET` | `/subtasks/task/{task_slug}` | ✓ | Listar subtarefas de uma tarefa |
 | `PATCH` | `/subtasks/{subtask_slug}` | ✓ | Atualizar subtarefa (suporta desatribuir via string vazia) |
 | `DELETE` | `/subtasks/{subtask_slug}` | ✓ | Deletar subtarefa |
+
+### Hábitos diários — `/habits`
+
+Seção **recorrente e restrita ao próprio usuário** (não compartilhável, como o modo individual). Cada hábito se repete por dia: ou `every_day` (todos os dias) ou um subconjunto de dias da semana (`days_of_week`, `0`=domingo … `6`=sábado). O progresso de cada dia é registrado num `HabitEntry` com status `pending` (pendente) / `in_progress` (em desenvolvimento) / `done` (finalizada). Só `done` conta como concluído nas porcentagens — `in_progress` é um status próprio, não conta como finalizado. "Hoje" é calculado no **fuso do usuário** (`User.timezone`, default `UTC`).
+
+**Recorrência reflete retroativamente.** As porcentagens recalculam os "dias agendados" a partir da máscara **atual** do hábito. Mudar a recorrência (ex.: de 3 dias/semana para todos os dias) reescreve a % histórica do mês — as marcações `done` são preservadas como dados, mas o denominador se ajusta à regra vigente.
+
+| Método | Path | Auth | Descrição |
+|---|---|---|---|
+| `POST` | `/habits` | ✓ | Criar hábito. `every_day=true` ⇒ todos os dias; senão informe `days_of_week` (≥1 dia) |
+| `GET` | `/habits` | ✓ | Listar todos os hábitos do usuário (com status de hoje) |
+| `GET` | `/habits/today` | ✓ | Listar apenas os hábitos programados para hoje |
+| `GET` | `/habits/stats` | ✓ | Porcentagem **diária** e **mensal** de conclusão (para a página de perfil) |
+| `PATCH` | `/habits/{slug}` | ✓ | Atualizar título/descrição/recorrência |
+| `PATCH` | `/habits/{slug}/status` | ✓ | Registrar status do dia (upsert). `date` opcional (default hoje); só dia agendado e não-futuro |
+| `DELETE` | `/habits/{slug}` | ✓ | Deletar hábito (entries em CASCADE) |
+
+A porcentagem diária conta `done` ÷ hábitos agendados para o dia; a mensal soma todas as ocorrências agendadas do dia 1 até a data de referência.
 
 ### Grupos — `/groups`
 
@@ -481,6 +499,8 @@ User ──< Notification
 
 Category ──< Task ──< Subtask
 Task >──< Tag  (many-to-many via task_tags)
+
+User ──< Habit ──< HabitEntry   (hábitos diários, só individual)
 ```
 
 ### Regra XOR (modo individual vs. grupo)
@@ -507,6 +527,7 @@ Subtarefas têm `assignee_user_id` próprio (nullable), independente do `assigne
 | `Task.assignee_user_id`, `Subtask.assignee_user_id` | SET NULL |
 | `Group.admin_user_id` | CASCADE (deleta o grupo) |
 | `GroupMember.user_id`, `Notification.user_id` | CASCADE |
+| `Habit.owner_user_id` | CASCADE (deleta hábitos e seus entries) |
 
 ---
 

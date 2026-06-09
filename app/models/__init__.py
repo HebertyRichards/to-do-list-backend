@@ -2,6 +2,7 @@ from app.models.base import Base
 from app.models.category import Category
 from app.models.group import Group
 from app.models.group_member import GroupMember, GroupRole
+from app.models.habit import Habit, HabitEntry, HabitStatus
 from app.models.join_request import JoinRequest, JoinRequestStatus
 from app.models.notification import Notification, NotificationType
 from app.models.subtask import Subtask
@@ -15,6 +16,9 @@ __all__ = [
     "Group",
     "GroupMember",
     "GroupRole",
+    "Habit",
+    "HabitEntry",
+    "HabitStatus",
     "JoinRequest",
     "JoinRequestStatus",
     "Notification",

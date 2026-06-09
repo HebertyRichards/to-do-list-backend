@@ -31,6 +31,7 @@ class ErrorCode(str, Enum):
     TASK_NOT_FOUND = "TASK_NOT_FOUND"
     SUBTASK_NOT_FOUND = "SUBTASK_NOT_FOUND"
     CATEGORY_NOT_FOUND = "CATEGORY_NOT_FOUND"
+    HABIT_NOT_FOUND = "HABIT_NOT_FOUND"
     JOIN_REQUEST_NOT_FOUND = "JOIN_REQUEST_NOT_FOUND"
 
     CONFLICT = "CONFLICT"
@@ -83,6 +84,7 @@ ERROR_CATALOG: dict[ErrorCode, ErrorSpec] = {
     ErrorCode.TASK_NOT_FOUND: ErrorSpec("TASK_NOT_FOUND", 404, "Tarefa nao encontrada."),
     ErrorCode.SUBTASK_NOT_FOUND: ErrorSpec("SUBTASK_NOT_FOUND", 404, "Subtarefa nao encontrada."),
     ErrorCode.CATEGORY_NOT_FOUND: ErrorSpec("CATEGORY_NOT_FOUND", 404, "Categoria nao encontrada."),
+    ErrorCode.HABIT_NOT_FOUND: ErrorSpec("HABIT_NOT_FOUND", 404, "Habito nao encontrado."),
     ErrorCode.JOIN_REQUEST_NOT_FOUND: ErrorSpec("JOIN_REQUEST_NOT_FOUND", 404, "Solicitacao nao encontrada."),
 
     ErrorCode.CONFLICT: ErrorSpec("CONFLICT", 409, "Conflito de estado."),

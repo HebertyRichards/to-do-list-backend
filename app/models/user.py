@@ -19,6 +19,9 @@ class User(Base, TimestampMixin):
     username: Mapped[str] = mapped_column(String(60), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    timezone: Mapped[str] = mapped_column(
+        String(64), default="UTC", server_default="UTC", nullable=False
+    )
     onboarded: Mapped[bool] = mapped_column(default=False, nullable=False)
     verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

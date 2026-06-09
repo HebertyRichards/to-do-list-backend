@@ -24,6 +24,8 @@ class UserService:
             user.username = data.username
         if data.avatar_url is not None:
             user.avatar_url = data.avatar_url
+        if data.timezone is not None:
+            user.timezone = data.timezone
         if data.onboarded is not None:
             user.onboarded = data.onboarded
 

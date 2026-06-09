@@ -12,3 +12,4 @@ bcrypt==4.0.1
 redis==5.2.1
 websockets==14.1
 fastapi-mail==1.4.2
+tzdata==2024.2
