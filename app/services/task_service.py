@@ -183,20 +183,23 @@ class TaskService:
     async def _notify_assignee(
         self, task: Task, assignee_user_id: uuid.UUID, assigner_username: str
     ) -> None:
+        payload: dict = {"task_slug": task.slug, "assigned_by": assigner_username}
+        if task.group_id:
+            group = await self.groups.get_by_id(task.group_id)
+            if group:
+                payload["group_slug"] = group.slug
+                payload["group_name"] = group.name
+
         notif = Notification(
             user_id=assignee_user_id,
             type=NotificationType.task_assigned,
             title=f"{assigner_username} atribuiu uma tarefa a você: {task.title}",
-            payload={"task_slug": task.slug, "assigned_by": assigner_username},
+            payload=payload,
         )
         await self.notifs.create(notif)
         await notification_manager.push(
             assignee_user_id,
-            {
-                "type": NotificationType.task_assigned.value,
-                "task_slug": task.slug,
-                "assigned_by": assigner_username,
-            },
+            {"type": NotificationType.task_assigned.value, **payload},
         )
 
     async def _resolve_or_create_tags(

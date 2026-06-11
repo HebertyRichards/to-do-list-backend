@@ -17,6 +17,7 @@ class NotificationType(str, enum.Enum):
     subtask_assigned = "subtask_assigned"
     member_removed = "member_removed"
     group_deleted = "group_deleted"
+    daily_reminder = "daily_reminder"
 
 
 class Notification(Base, TimestampMixin):

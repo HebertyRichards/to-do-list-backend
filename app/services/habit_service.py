@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends
@@ -25,12 +25,29 @@ from app.schemas.habit_schemas import (
 from app.utils.security import generate_slug
 
 
-def _user_today(user: User) -> date:
+def _safe_zone(name: str | None) -> ZoneInfo | None:
+    if not name:
+        return None
     try:
-        tz = ZoneInfo(user.timezone or "UTC")
+        return ZoneInfo(name)
     except Exception:
-        tz = ZoneInfo("UTC")
-    return datetime.now(tz).date()
+        return None
+
+
+def _effective_zone(user: User, tz_name: str | None = None) -> ZoneInfo:
+    """Fuso efetivo: header da requisição → user.timezone → UTC."""
+    return _safe_zone(tz_name) or _safe_zone(user.timezone) or ZoneInfo("UTC")
+
+
+def _user_today(user: User, tz_name: str | None = None) -> date:
+    return datetime.now(_effective_zone(user, tz_name)).date()
+
+
+def _local_date(dt: datetime, zone: ZoneInfo) -> date:
+    """Converte um timestamp (armazenado em UTC) para a data no fuso informado."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(zone).date()
 
 
 class HabitService:
@@ -38,7 +55,9 @@ class HabitService:
         self.db = db
         self.repo = HabitRepository(db)
 
-    async def create(self, user: User, data: HabitCreate) -> HabitOut:
+    async def create(
+        self, user: User, data: HabitCreate, tz: str | None = None
+    ) -> HabitOut:
         mask = self._resolve_mask(data.every_day, data.days_of_week)
         habit = Habit(
             slug=generate_slug(),
@@ -50,16 +69,16 @@ class HabitService:
         )
         habit = await self.repo.create(habit)
         await self.db.commit()
-        return self._habit_out(habit, None, _user_today(user))
+        return self._habit_out(habit, None, _user_today(user, tz))
 
-    async def list_user(self, user: User) -> list[HabitOut]:
-        today = _user_today(user)
+    async def list_user(self, user: User, tz: str | None = None) -> list[HabitOut]:
+        today = _user_today(user, tz)
         habits = await self.repo.list_for_user(user.id)
         status_map = await self._today_status_map(user, today)
         return [self._habit_out(h, status_map.get(h.id), today) for h in habits]
 
-    async def list_today(self, user: User) -> list[HabitOut]:
-        today = _user_today(user)
+    async def list_today(self, user: User, tz: str | None = None) -> list[HabitOut]:
+        today = _user_today(user, tz)
         habits = await self.repo.list_for_user(user.id)
         status_map = await self._today_status_map(user, today)
         return [
@@ -68,7 +87,9 @@ class HabitService:
             if is_scheduled(h.days_mask, today)
         ]
 
-    async def update(self, user: User, slug: str, data: HabitUpdate) -> HabitOut:
+    async def update(
+        self, user: User, slug: str, data: HabitUpdate, tz: str | None = None
+    ) -> HabitOut:
         habit = await self._get_owned(user, slug)
 
         if data.title is not None:
@@ -83,7 +104,7 @@ class HabitService:
 
         await self.db.flush()
         await self.db.commit()
-        return await self._habit_out_with_today(habit, _user_today(user))
+        return await self._habit_out_with_today(habit, _user_today(user, tz))
 
     async def delete(self, user: User, slug: str) -> None:
         habit = await self._get_owned(user, slug)
@@ -91,10 +112,10 @@ class HabitService:
         await self.db.commit()
 
     async def set_status(
-        self, user: User, slug: str, data: HabitStatusUpdate
+        self, user: User, slug: str, data: HabitStatusUpdate, tz: str | None = None
     ) -> HabitOut:
         habit = await self._get_owned(user, slug)
-        today = _user_today(user)
+        today = _user_today(user, tz)
         target = data.date or today
 
         if target > today:
@@ -115,12 +136,17 @@ class HabitService:
         await self.db.commit()
         return await self._habit_out_with_today(habit, today)
 
-    async def stats(self, user: User, ref_date: date | None = None) -> HabitStatsOut:
-        today = ref_date or _user_today(user)
+    async def stats(
+        self, user: User, ref_date: date | None = None, tz: str | None = None
+    ) -> HabitStatsOut:
+        zone = _effective_zone(user, tz)
+        today = ref_date or datetime.now(zone).date()
         habits = await self.repo.list_for_user(user.id)
 
         def active(habit: Habit, day: date) -> bool:
-            return habit.created_at.date() <= day and is_scheduled(habit.days_mask, day)
+            return _local_date(habit.created_at, zone) <= day and is_scheduled(
+                habit.days_mask, day
+            )
 
         # Diário
         status_map = await self._today_status_map(user, today)

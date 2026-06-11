@@ -5,7 +5,13 @@ import uuid
 
 from fastapi import WebSocket
 
+from app.config.redis_client import get_redis, is_redis_available
+from app.utils import notification_cache
+
 logger = logging.getLogger(__name__)
+
+PUBSUB_CHANNEL = "notifications:push"
+_RECONNECT_DELAY = 5
 
 
 class NotificationManager:
@@ -32,6 +38,23 @@ class NotificationManager:
         logger.debug("WS desconectado user_id=%s", user_id)
 
     async def push(self, user_id: uuid.UUID, payload: dict[str, object]) -> None:
+        # Push acontece sempre apos o commit; e o ponto unico para invalidar o cache.
+        await notification_cache.invalidate(user_id)
+
+        if is_redis_available():
+            try:
+                redis = await get_redis()
+                await redis.publish(
+                    PUBSUB_CHANNEL,
+                    json.dumps({"user_id": str(user_id), "payload": payload}),
+                )
+                return
+            except Exception as exc:
+                logger.warning("Pub/sub publish falhou, entregando localmente: %s", exc)
+
+        await self._deliver_local(user_id, payload)
+
+    async def _deliver_local(self, user_id: uuid.UUID, payload: dict[str, object]) -> None:
         async with self._lock:
             conns = list(self._connections.get(user_id, []))
 
@@ -53,6 +76,35 @@ class NotificationManager:
                     live = self._connections.get(user_id, [])
                     if ws in live:
                         live.remove(ws)
+
+    async def pubsub_listener(self) -> None:
+        """Escuta o canal de push no Redis e entrega as conexoes locais.
+
+        Permite multiplas instancias da API: quem publica nao precisa ser
+        quem segura a conexao WebSocket do usuario.
+        """
+        while True:
+            if not is_redis_available():
+                await asyncio.sleep(_RECONNECT_DELAY)
+                continue
+            try:
+                redis = await get_redis()
+                pubsub = redis.pubsub()
+                await pubsub.subscribe(PUBSUB_CHANNEL)
+                logger.info("Pub/sub de notificacoes inscrito em %s", PUBSUB_CHANNEL)
+                async for message in pubsub.listen():
+                    if message.get("type") != "message":
+                        continue
+                    try:
+                        data = json.loads(message["data"])
+                        await self._deliver_local(uuid.UUID(data["user_id"]), data["payload"])
+                    except Exception:
+                        logger.exception("Mensagem pub/sub invalida ignorada")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Pub/sub listener caiu, reconectando em %ss: %s", _RECONNECT_DELAY, exc)
+                await asyncio.sleep(_RECONNECT_DELAY)
 
 
 notification_manager = NotificationManager()

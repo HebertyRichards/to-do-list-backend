@@ -1,4 +1,5 @@
 import uuid
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,3 +47,19 @@ async def get_current_user_ws(
     if not token:
         raise AppException(ErrorCode.UNAUTHENTICATED)
     return await _user_from_token(token, db)
+
+
+def get_request_timezone(request: Request) -> str | None:
+    """Fuso enviado pelo cliente em cada requisição (header X-Timezone, nome IANA).
+
+    Permite que o "hoje" siga o dispositivo do usuário em vez de um valor fixo.
+    Retorna None se ausente ou inválido, deixando o chamador cair no fallback.
+    """
+    tz = request.headers.get("x-timezone")
+    if not tz:
+        return None
+    try:
+        ZoneInfo(tz)
+    except Exception:
+        return None
+    return tz

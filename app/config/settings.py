@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     trust_forwarded_for: bool = Field(default=False)
     trusted_proxy_count: int = Field(default=1)
 
+    daily_reminder_hour: int = Field(default=12)
+    daily_reminder_check_minutes: int = Field(default=60)
+    cleanup_retention_days: int = Field(default=90)
+    log_json: bool = Field(default=False)
+
     frontend_origin: str = Field(...)
     cookie_domain: str = Field(default="")
     cookie_secure: bool = Field(...)

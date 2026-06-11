@@ -14,3 +14,12 @@ class NotificationOut(BaseModel):
     payload: dict
     read_at: datetime | None
     created_at: datetime
+
+
+class NotificationPage(BaseModel):
+    items: list[NotificationOut]
+    next_cursor: int | None
+
+
+class UnreadCountOut(BaseModel):
+    count: int

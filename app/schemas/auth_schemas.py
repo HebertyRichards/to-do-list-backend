@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from app.schemas.user_schemas import validate_timezone
+
 _PASSWORD_RULES = [
     (r"[A-Z]", "A senha deve conter ao menos uma letra maiúscula"),
     (r"[a-z]", "A senha deve conter ao menos uma letra minúscula"),
@@ -22,11 +24,17 @@ class RegisterInput(BaseModel):
     email: EmailStr
     username: str = Field(min_length=3, max_length=60)
     password: str = Field(min_length=8, max_length=128)
+    timezone: str = Field(default="UTC", max_length=64)
 
     @field_validator("password")
     @classmethod
     def password_strength(cls, v: str) -> str:
         return _validate_password(v)
+
+    @field_validator("timezone")
+    @classmethod
+    def timezone_valid(cls, v: str) -> str:
+        return validate_timezone(v)
 
 
 class LoginInput(BaseModel):

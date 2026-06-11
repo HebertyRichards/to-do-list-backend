@@ -94,6 +94,7 @@ class AuthService:
             email=data.email,
             username=data.username,
             hashed_password=hash_password(data.password),
+            timezone=data.timezone,
         )
         user = await self.users.create(user)
         await self.db.commit()

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database import get_db
 from app.errors import AppException, ErrorCode
-from app.models import Notification, Subtask, User
+from app.models import Notification, Subtask, Task, User
 from app.models.notification import NotificationType
 from app.repositories.group_repository import GroupRepository
 from app.repositories.notification_repository import NotificationRepository
@@ -53,7 +53,7 @@ class SubtaskService:
         subtask = await self.repo.create(subtask)
 
         if assignee_user_id and assignee_user_id != user.id:
-            await self._notify_assignee(subtask, task.slug, assignee_user_id, user.username)
+            await self._notify_assignee(subtask, task, assignee_user_id, user.username)
 
         await self.db.commit()
         return self._subtask_out(subtask)
@@ -99,7 +99,7 @@ class SubtaskService:
             and subtask.assignee_user_id != user.id
         ):
             await self._notify_assignee(
-                subtask, subtask.task.slug, subtask.assignee_user_id, user.username
+                subtask, subtask.task, subtask.assignee_user_id, user.username
             )
 
         await self.db.commit()
@@ -138,29 +138,31 @@ class SubtaskService:
     async def _notify_assignee(
         self,
         subtask: Subtask,
-        task_slug: str,
+        task: Task,
         assignee_user_id: uuid.UUID,
         assigner_username: str,
     ) -> None:
+        payload: dict = {
+            "subtask_slug": subtask.slug,
+            "task_slug": task.slug,
+            "assigned_by": assigner_username,
+        }
+        if task.group_id:
+            group = await self.groups.get_by_id(task.group_id)
+            if group:
+                payload["group_slug"] = group.slug
+                payload["group_name"] = group.name
+
         notif = Notification(
             user_id=assignee_user_id,
             type=NotificationType.subtask_assigned,
             title=f"{assigner_username} atribuiu uma subtarefa a você: {subtask.title}",
-            payload={
-                "subtask_slug": subtask.slug,
-                "task_slug": task_slug,
-                "assigned_by": assigner_username,
-            },
+            payload=payload,
         )
         await self.notifs.create(notif)
         await notification_manager.push(
             assignee_user_id,
-            {
-                "type": NotificationType.subtask_assigned.value,
-                "subtask_slug": subtask.slug,
-                "task_slug": task_slug,
-                "assigned_by": assigner_username,
-            },
+            {"type": NotificationType.subtask_assigned.value, **payload},
         )
 
     @staticmethod

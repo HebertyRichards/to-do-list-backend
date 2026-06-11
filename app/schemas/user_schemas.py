@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
-def _validate_timezone(value: str) -> str:
+def validate_timezone(value: str) -> str:
     try:
         ZoneInfo(value)
     except (ZoneInfoNotFoundError, ValueError) as err:
@@ -32,4 +32,4 @@ class UpdateProfileInput(BaseModel):
     def _check_timezone(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return _validate_timezone(value)
+        return validate_timezone(value)

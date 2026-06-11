@@ -1,11 +1,15 @@
-import logging
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
-from app.config.redis_client import close_redis, init_redis
+from app.config.database import engine
+from app.config.logging_config import setup_logging
+from app.config.redis_client import close_redis, get_redis, init_redis, is_redis_available
 from app.config.settings import get_settings
 from app.errors import AppException, register_exception_handlers
 from app.routes.auth_routes import auth_routes
@@ -16,20 +20,29 @@ from app.routes.notification_routes import notification_routes
 from app.routes.subtask_routes import subtask_routes
 from app.routes.task_routes import task_routes
 from app.routes.user_routes import user_routes
+from app.services.daily_reminder_service import daily_reminder_loop
 from app.utils import rate_limit
+from app.ws.manager import notification_manager
 from app.ws.routes import ws_routes
 
 settings = get_settings()
 
-logging.basicConfig(
-    level=settings.log_level,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+setup_logging(settings.log_level, json_logs=settings.log_json or settings.is_production)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_redis()
+    background_tasks = [
+        asyncio.create_task(daily_reminder_loop()),
+        asyncio.create_task(notification_manager.pubsub_listener()),
+    ]
     yield
+    for task in background_tasks:
+        task.cancel()
+    for task in background_tasks:
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
     await close_redis()
 
 
@@ -39,7 +52,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-_RATE_LIMIT_EXEMPT_PATHS = {"/health"}
+_RATE_LIMIT_EXEMPT_PATHS = {"/health", "/ready"}
 
 
 def _client_ip(request: Request) -> str:
@@ -91,3 +104,22 @@ app.include_router(ws_routes)
 @app.get("/health", tags=["meta"])
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/ready", tags=["meta"])
+async def ready():
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "unavailable", "dependency": "database"})
+
+    if settings.redis_enabled:
+        if not is_redis_available():
+            return JSONResponse(status_code=503, content={"status": "unavailable", "dependency": "redis"})
+        try:
+            await (await get_redis()).ping()
+        except Exception:
+            return JSONResponse(status_code=503, content={"status": "unavailable", "dependency": "redis"})
+
+    return {"status": "ready"}
