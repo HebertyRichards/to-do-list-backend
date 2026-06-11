@@ -1,6 +1,6 @@
 # To-Do List — Backend
 
-API REST + WebSocket construída com **FastAPI**, **SQLAlchemy 2 async** e **PostgreSQL** (Neon). Suporta modo individual, modo grupo e hábitos diários (recorrentes), autenticação JWT em cookies httpOnly, verificação de email, rate limiting por conta e notificações em tempo real.
+API REST + WebSocket construída com **FastAPI**, **SQLAlchemy 2 async** e **PostgreSQL** (Neon). Suporta modo individual, modo grupo e hábitos diários (recorrentes), autenticação JWT em cookies httpOnly, verificação de email, rate limiting por conta, notificações em tempo real (paginadas por cursor e cacheadas no Redis, com pub/sub para múltiplas instâncias) e lembrete diário automático de hábitos no fuso de cada usuário.
 
 ---
 
@@ -15,7 +15,7 @@ API REST + WebSocket construída com **FastAPI**, **SQLAlchemy 2 async** e **Pos
 | Validação | Pydantic 2 |
 | Autenticação | JWT (`python-jose`) em cookies httpOnly |
 | Email | `fastapi-mail` (SMTP — Gmail por padrão) |
-| Cache/rate limit | Redis (com fallback `NullRedis` se indisponível) |
+| Cache / rate limit / pub-sub | Redis (com fallback `NullRedis` degradado se indisponível) |
 | WebSocket | FastAPI nativo |
 | Servidor | Uvicorn |
 
@@ -29,8 +29,8 @@ services/       → regras de negócio (classes async)
 repositories/   → queries SQLAlchemy (sem lógica de negócio)
 models/         → ORM (Mapped[T] + mapped_column — SQLAlchemy 2)
 schemas/        → Pydantic v2 (input/output)
-utils/          → cookies, dependencies, security, rate_limit
-ws/             → NotificationManager + rotas WebSocket
+utils/          → cookies, dependencies, security, rate_limit, notification_cache
+ws/             → NotificationManager (pub/sub Redis) + rotas WebSocket
 ```
 
 ---
@@ -45,6 +45,7 @@ to-do-list-backend/
 │   ├── config/
 │   │   ├── database.py         # Engine async + get_db
 │   │   ├── email.py            # SMTP config (fastapi-mail)
+│   │   ├── logging_config.py   # Logs em texto (dev) ou JSON (produção)
 │   │   ├── redis_client.py     # NullRedis fallback + init_redis()
 │   │   └── settings.py         # Pydantic Settings (@lru_cache)
 │   ├── errors/                 # Códigos + handlers
@@ -53,13 +54,15 @@ to-do-list-backend/
 │   ├── routes/                 # APIRouter (sem lógica)
 │   ├── schemas/                # Pydantic input/output
 │   ├── services/               # Regras de negócio
+│   │   └── daily_reminder_service.py  # Jobs em background (lembrete + limpeza)
 │   ├── utils/
 │   │   ├── cookies.py
-│   │   ├── dependencies.py     # get_current_user, get_current_user_ws
+│   │   ├── dependencies.py     # get_current_user, get_current_user_ws, get_request_timezone
+│   │   ├── notification_cache.py  # Cache Redis (1ª página + unread count)
 │   │   ├── rate_limit.py       # Rate limiting por chave/email
 │   │   └── security.py         # JWT, hash de senha, chave de grupo
 │   └── ws/
-│       ├── manager.py          # NotificationManager singleton
+│       ├── manager.py          # NotificationManager singleton + pub/sub Redis
 │       └── routes.py           # /ws/notifications
 ├── tests/
 ├── .dockerignore               # Bloqueia .env, venv, .git, etc. fora da imagem
@@ -74,7 +77,7 @@ to-do-list-backend/
 
 ## Variáveis de ambiente
 
-Crie um arquivo `.env` na raiz do backend. Todos os campos são obrigatórios.
+Crie um arquivo `.env` na raiz do backend. Todos os campos são obrigatórios, exceto os marcados como **opcionais** (têm default no código).
 
 ### Variáveis usadas
 
@@ -100,6 +103,11 @@ Crie um arquivo `.env` na raiz do backend. Todos os campos são obrigatórios.
 | `COOKIE_SAMESITE` | FastAPI | `lax` (padrão) |
 | `EMAIL_USER` | FastAPI (SMTP) | Conta Gmail emissora |
 | `EMAIL_PASS` | FastAPI (SMTP) | App password do Gmail (16 chars) |
+| `REDIS_ENABLED` | FastAPI | **Opcional** (default `true`). `false` ativa o modo degradado `NullRedis` — ver seção Redis |
+| `LOG_JSON` | FastAPI | **Opcional** (default `false`). Força logs em JSON; em `APP_ENV=production` já é automático |
+| `DAILY_REMINDER_HOUR` | Job em background | **Opcional** (default `12`). Hora local do usuário a partir da qual o lembrete do diário dispara |
+| `DAILY_REMINDER_CHECK_MINUTES` | Job em background | **Opcional** (default `60`). Intervalo do ciclo de jobs (lembrete + limpeza) |
+| `CLEANUP_RETENTION_DAYS` | Job em background | **Opcional** (default `90`). Retenção de notificações lidas e join requests vencidos |
 
 ### O que muda entre cenários
 
@@ -138,11 +146,34 @@ Nunca reutilize o segredo entre ambientes e nunca commite o `.env`. O `.dockerig
 
 O `Makefile` na raiz expõe os comandos do dia-a-dia. Rode `make` ou `make help` para listar.
 
+Funciona em **Linux, macOS e Windows**: o Makefile detecta o SO e ajusta os caminhos do venv (`venv/bin` vs `venv/Scripts`) e o python do sistema (`python3` vs `python`); todos os comandos rodam via `python -m`, sem depender de binários por plataforma.
+
+### Se `make` falhar (Windows)
+
+O terminal usado (VS Code, Windows Terminal, etc.) não importa — ele só hospeda o shell. O que importa é ter o **GNU Make instalado e no PATH**. Diagnóstico pelo erro:
+
+| Erro | Causa | Solução |
+|---|---|---|
+| `make: command not found` / `'make' não é reconhecido` | GNU Make não instalado. **O Git Bash sozinho não inclui o `make`** (instala só o `sh.exe`) | Instale uma vez: `choco install make` (Chocolatey), `scoop install make` (Scoop) ou via MSYS2 (`pacman -S make`). Depois reabra o terminal |
+| Instalou e continua "não reconhecido" | Pasta do make fora do PATH ou terminal aberto antes da instalação | Reabra o terminal; persiste? confira o PATH (`where make` no cmd/PowerShell) |
+| `make` roda mas a receita falha com erro de sintaxe | Versão não-GNU (ex.: `nmake` da Microsoft) | Use o GNU Make (`make --version` deve mostrar "GNU Make") |
+| `python3: command not found` ao criar o venv (Linux/macOS) | Python não instalado ou só disponível como `python` | Instale Python 3.11+ ou rode manualmente `python -m venv venv` |
+
+**Plano B sem make**: todos os alvos são atalhos — dá para rodar os comandos por baixo diretamente:
+
+```bash
+python -m venv venv                                  # make venv
+venv/Scripts/python -m pip install -r requirements.txt   # make install (Windows; Linux: venv/bin/python)
+venv/Scripts/python -m uvicorn app.main:app --reload      # make dev
+venv/Scripts/python -m alembic upgrade head               # make upgrade
+```
+
 ### Local (venv)
 
 | Comando | O que faz |
 |---|---|
-| `make install` | `pip install -r requirements.txt` no venv |
+| `make venv` | Cria o venv (no-op se já existir) |
+| `make install` | Cria o venv se preciso + `pip install -r requirements.txt` |
 | `make dev` | Sobe o uvicorn com `--reload` em `0.0.0.0:8000` |
 | `make migrate m="descricao"` | Gera migration nova a partir dos models. **Revise o arquivo gerado antes de aplicar** |
 | `make upgrade` | Aplica migrations pendentes (`alembic upgrade head`) |
@@ -204,15 +235,15 @@ git commit -m "feat: add foo to user"
 
 - Python 3.11+
 - PostgreSQL (Neon ou local)
-- Redis acessível na `REDIS_URL` (opcional — app continua sem ele, mas sem rate limit, denylist de refresh, nem cache de códigos)
+- Redis acessível na `REDIS_URL` (essencial para o app completo — sem ele registro, verificação de email e reset de senha retornam 503; ver seção **Redis**)
 
 ### 1. Instalar dependências
 
 ```bash
-python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
-make install               # ou: pip install -r requirements.txt
+make install   # cria o venv automaticamente e instala as dependências
 ```
+
+Não é preciso ativar o venv para usar o Makefile — os alvos chamam o python do venv diretamente. Se quiser ativar para rodar comandos manuais: `source venv/bin/activate` (Windows: `venv\Scripts\activate`).
 
 Para builds totalmente reproduzíveis com deps transitivas pinadas, gere um lock:
 
@@ -306,7 +337,7 @@ seu-dominio.com {
 
 | Método | Path | Auth | Descrição |
 |---|---|---|---|
-| `POST` | `/auth/register` | — | Registrar usuário. Dispara código de verificação por email |
+| `POST` | `/auth/register` | — | Registrar usuário. Dispara código de verificação por email. Aceita `timezone` IANA opcional (default `UTC`) |
 | `POST` | `/auth/verify-email` | — | Confirma email com código de 6 dígitos. Loga o usuário (sessão curta) |
 | `POST` | `/auth/resend-verification` | — | Reenvia código de verificação |
 | `POST` | `/auth/login` | — | Login. Aceita `remember_me` para sessão de 30d. Bloqueia se email não verificado |
@@ -357,7 +388,7 @@ seu-dominio.com {
 
 ### Hábitos diários — `/habits`
 
-Seção **recorrente e restrita ao próprio usuário** (não compartilhável, como o modo individual). Cada hábito se repete por dia: ou `every_day` (todos os dias) ou um subconjunto de dias da semana (`days_of_week`, `0`=domingo … `6`=sábado). O progresso de cada dia é registrado num `HabitEntry` com status `pending` (pendente) / `in_progress` (em desenvolvimento) / `done` (finalizada). Só `done` conta como concluído nas porcentagens — `in_progress` é um status próprio, não conta como finalizado. "Hoje" é calculado no **fuso do usuário** (`User.timezone`, default `UTC`).
+Seção **recorrente e restrita ao próprio usuário** (não compartilhável, como o modo individual). Cada hábito se repete por dia: ou `every_day` (todos os dias) ou um subconjunto de dias da semana (`days_of_week`, `0`=domingo … `6`=sábado). O progresso de cada dia é registrado num `HabitEntry` com status `pending` (pendente) / `in_progress` (em desenvolvimento) / `done` (finalizada). Só `done` conta como concluído nas porcentagens — `in_progress` é um status próprio, não conta como finalizado. "Hoje" é calculado no **fuso efetivo**, resolvido na ordem: header `X-Timezone` da requisição → `User.timezone` → `UTC`.
 
 **Recorrência reflete retroativamente.** As porcentagens recalculam os "dias agendados" a partir da máscara **atual** do hábito. Mudar a recorrência (ex.: de 3 dias/semana para todos os dias) reescreve a % histórica do mês — as marcações `done` são preservadas como dados, mas o denominador se ajusta à regra vigente.
 
@@ -395,9 +426,10 @@ A porcentagem diária conta `done` ÷ hábitos agendados para o dia; a mensal so
 
 | Método | Path | Auth | Descrição |
 |---|---|---|---|
-| `GET` | `/notifications` | ✓ | Listar notificações |
-| `PATCH` | `/notifications/{id}/read` | ✓ | Marcar como lida |
-| `PATCH` | `/notifications/read-all` | ✓ | Marcar todas como lidas |
+| `GET` | `/notifications?cursor=<id>&limit=10` | ✓ | Listar notificações com **paginação por cursor** (keyset por `id` desc). Retorna `{items, next_cursor}`; `next_cursor=null` na última página. A 1ª página é cacheada no Redis (TTL 60s) |
+| `GET` | `/notifications/unread-count` | ✓ | Contador de não lidas (cacheado no Redis, invalidado a cada notificação nova ou leitura) |
+| `PATCH` | `/notifications/{id}/read` | ✓ | Marcar como lida (invalida o cache) |
+| `PATCH` | `/notifications/read-all` | ✓ | Marcar todas como lidas (invalida o cache) |
 
 ### WebSocket
 
@@ -411,7 +443,8 @@ A porcentagem diária conta `done` ÷ hábitos agendados para o dia; a mensal so
 
 | Método | Path | Descrição |
 |---|---|---|
-| `GET` | `/health` | Status da aplicação |
+| `GET` | `/health` | Liveness — processo vivo (raso, sem checar dependências) |
+| `GET` | `/ready` | Readiness — `SELECT 1` no Postgres + `PING` no Redis (quando `REDIS_ENABLED=true`). Retorna `503` com a dependência que falhou |
 
 ---
 
@@ -535,14 +568,34 @@ Subtarefas têm `assignee_user_id` próprio (nullable), independente do `assigne
 
 ## WebSocket e Notificações
 
-`NotificationManager` é singleton global que mantém conexões WebSocket por `user_id`. Quando um evento ocorre (pedido de entrada, tarefa atribuída, membro removido, grupo deletado, etc.), o service chama `notification_manager.push(user_id, payload)` para entregar a mensagem para todas as conexões ativas daquele usuário.
+`NotificationManager` é singleton que mantém conexões WebSocket por `user_id` (um usuário pode ter várias — desktop + celular recebem o mesmo push). Quando um evento ocorre, o service chama `notification_manager.push(user_id, payload)` **sempre após o commit**.
 
-O cliente reconecta automaticamente a cada 5 segundos em caso de desconexão (implementado no frontend).
+O `push` faz três coisas, nesta ordem:
+1. **Invalida o cache** de notificações do usuário no Redis (1ª página + unread count).
+2. **Publica no canal pub/sub** `notifications:push` do Redis — assim **múltiplas instâncias da API funcionam**: quem gera a notificação não precisa ser quem segura a conexão WebSocket. Cada instância roda um listener (iniciado no lifespan) que entrega às suas conexões locais.
+3. Se o Redis estiver indisponível, **fallback de entrega local** direta (modo instância única).
+
+O cliente reconecta automaticamente com backoff em caso de desconexão (implementado no frontend).
 
 Tipos de notificação:
 - `join_request_created`, `join_request_accepted`, `join_request_rejected`
-- `task_assigned`, `subtask_assigned`
+- `task_assigned`, `subtask_assigned` — quando a tarefa é de grupo, o payload inclui `group_slug` e `group_name` (o frontend usa para deep link direto ao grupo)
 - `member_removed`, `group_deleted`
+- `daily_reminder` — lembrete do diário (ver seção abaixo)
+
+---
+
+## Jobs em background
+
+Um loop único (iniciado no lifespan, intervalo de `DAILY_REMINDER_CHECK_MINUTES`) executa dois jobs. Antes de cada ciclo tenta adquirir um **lock distribuído no Redis** (`locks:daily_jobs`, `SET NX EX`) — com múltiplas instâncias, só uma executa por ciclo. Sem Redis, assume instância única e prossegue.
+
+### Lembrete diário (`daily_reminder`)
+
+Para cada usuário com hábitos, converte o relógio para o **fuso do usuário** (`User.timezone`) e, se já passou de `DAILY_REMINDER_HOUR` (default 12h), há hábito agendado para o dia da semana e **nenhuma entry saiu de `pending`**, cria a notificação persistida + push WS. **No máximo 1 por dia local** — o dedupe é garantido pelo banco (busca por `daily_reminder` criado desde a meia-noite local), então sobrevive a restarts e instâncias duplicadas.
+
+### Limpeza por retenção
+
+Remove notificações **lidas** há mais de `CLEANUP_RETENTION_DAYS` (default 90) e join requests vencidos há mais que o mesmo período. Não lidas nunca são apagadas.
 
 ---
 
@@ -571,8 +624,12 @@ Usado para:
 - **Códigos de reset de senha** — `pwd_reset:{user_id}` (sha256 do código, TTL 10 min)
 - **Denylist de refresh tokens** — `refresh_denylist:{jti}` (TTL 30d)
 - **Rate limiting** — `rl:{op}:{email}` e `rl:{verify|reset}_code:{user_id}` (TTLs variados)
+- **Cache de notificações** — `notif:first_page:{user_id}` e `notif:unread:{user_id}` (TTL 60s, invalidados a cada push/leitura)
+- **Pub/sub do WebSocket** — canal `notifications:push` (entrega entre instâncias)
+- **Lock do ciclo de jobs** — `locks:daily_jobs` (`SET NX EX`)
 
-Se o Redis estiver indisponível no startup, o sistema continua com `NullRedis` (no-op). Consequências:
-- Códigos de verificação/reset não funcionam (mas a sessão sobrevive)
-- Rate limit fica aberto
-- Logout não revoga refresh imediatamente (mas o `pwd_changed_at` do reset ainda funciona)
+Se o Redis estiver indisponível no startup, o sistema continua com `NullRedis`, mas em **modo degradado** — Redis é dependência essencial, não cache opcional. Consequências sem ele:
+- **Registro, verificação de email e reset de senha quebram** (`503 SERVICE_UNAVAILABLE` — os OTPs e seus rate limits exigem Redis)
+- Login de usuários já verificados, tarefas, grupos, hábitos e WS continuam funcionando
+- Rate limit fica aberto; logout não revoga refresh imediatamente; detecção de reuso de refresh fica cega (mas o `pwd_changed_at` do reset ainda revoga sessões via DB)
+- Cache de notificações desligado (toda leitura vai ao banco); pub/sub desligado (push só na própria instância); jobs rodam sem lock (seguro apenas com instância única)
