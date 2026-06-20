@@ -2,6 +2,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, stat
 
 from app.models import User
 from app.schemas.auth_schemas import (
+    ChangeEmailConfirmInput,
+    ChangeEmailRequestInput,
+    ChangePasswordConfirmInput,
+    ChangePasswordRequestInput,
     CurrentUser,
     DeleteAccountInput,
     ForgotPasswordInput,
@@ -86,3 +90,42 @@ async def delete_account(
     service: AuthService = Depends(),
 ):
     await service.delete_account(user, data, response)
+
+
+@auth_routes.post("/change-email/request", status_code=status.HTTP_204_NO_CONTENT)
+async def request_email_change(
+    data: ChangeEmailRequestInput,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    service: AuthService = Depends(),
+):
+    await service.request_email_change(user, data, background_tasks)
+
+
+@auth_routes.post("/change-email/confirm", response_model=CurrentUser)
+async def confirm_email_change(
+    data: ChangeEmailConfirmInput,
+    user: User = Depends(get_current_user),
+    service: AuthService = Depends(),
+):
+    return await service.confirm_email_change(user, data)
+
+
+@auth_routes.post("/change-password/request", status_code=status.HTTP_204_NO_CONTENT)
+async def request_password_change(
+    data: ChangePasswordRequestInput,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    service: AuthService = Depends(),
+):
+    await service.request_password_change(user, data, background_tasks)
+
+
+@auth_routes.post("/change-password/confirm", status_code=status.HTTP_204_NO_CONTENT)
+async def confirm_password_change(
+    data: ChangePasswordConfirmInput,
+    response: Response,
+    user: User = Depends(get_current_user),
+    service: AuthService = Depends(),
+):
+    await service.confirm_password_change(user, data, response)

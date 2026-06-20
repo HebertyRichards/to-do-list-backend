@@ -15,7 +15,7 @@ API REST + WebSocket construída com **FastAPI**, **SQLAlchemy 2 async** e **Pos
 | Validação | Pydantic 2 |
 | Autenticação | JWT (`python-jose`) em cookies httpOnly |
 | Email | `fastapi-mail` (SMTP — Gmail por padrão) |
-| Cache / rate limit / pub-sub | Redis (com fallback `NullRedis` degradado se indisponível) |
+| Cache / rate limit / pub-sub | Redis (com fallback `NullRedis` degradado + circuit breaker se indisponível) |
 | WebSocket | FastAPI nativo |
 | Servidor | Uvicorn |
 
@@ -347,6 +347,10 @@ seu-dominio.com {
 | `POST` | `/auth/forgot-password` | — | Dispara código de 6 dígitos por email (sempre retorna 200) |
 | `POST` | `/auth/reset-password` | — | Redefine senha com código + revoga todas as sessões |
 | `DELETE` | `/auth/account` | ✓ + senha | Exclui a conta. Grupos onde o usuário é dono também são deletados |
+| `POST` | `/auth/change-email/request` | ✓ + senha | Inicia troca de email. Valida a senha atual e dispara código de 6 dígitos para o **email novo** |
+| `POST` | `/auth/change-email/confirm` | ✓ | Confirma a troca com o código. Retorna o perfil atualizado |
+| `POST` | `/auth/change-password/request` | ✓ + senha | Inicia troca de senha. Valida a senha atual + força da nova e dispara código para o **email atual** |
+| `POST` | `/auth/change-password/confirm` | ✓ | Confirma a troca com o código. Revoga todas as sessões + limpa cookies (exige novo login) |
 
 ### Usuário — `/users`
 
@@ -481,6 +485,16 @@ Cada `/auth/refresh` rotaciona o `jti` mas mantém o mesmo `sid`. O `exp` é sem
 
 Tentativas erradas de código são contadas (`rl:verify_code:{user_id}` / `rl:reset_code:{user_id}`) e bloqueadas em 5 falhas (anti-brute-force).
 
+### Troca de email e senha (usuário logado)
+
+Disponível em `/settings`. Ambos os fluxos são em **dois passos** (`request` → `confirm`) e exigem a **senha atual** no passo `request`. O estado intermediário vive só no Redis com TTL de 10 min — **se o Redis estiver fora, esta seção não funciona** (igual à criação/verificação de conta), pois o token é temporário e não pode persistir.
+
+**Troca de email** — `change-email/request` valida a senha, garante que o email novo não está em uso e grava `{code, email}` (código como `sha256`) em `email_change:{user_id}`. O código de 6 dígitos vai para o **email novo** (prova de posse). `change-email/confirm` valida o código, recheca a unicidade e efetiva a troca. A sessão é mantida (não é logout).
+
+**Troca de senha** — `change-password/request` valida a senha atual + a força da nova e grava `{code, hash}` em `pwd_change:{user_id}`, onde `hash` é a **nova senha já cifrada com bcrypt** (nunca em claro). O código vai para o **email atual**. `change-password/confirm` aplica o hash, seta `pwd_changed_at = now()` (revoga todas as sessões via `sid`) e limpa os cookies — o usuário precisa logar de novo.
+
+Tentativas erradas de código também são contadas (`rl:change_email_code:{user_id}` / `rl:change_pwd_code:{user_id}`) e bloqueadas em 5 falhas.
+
 ### Rate limiting por email
 
 Implementado em `app/utils/rate_limit.py`, por chave Redis:
@@ -491,7 +505,9 @@ Implementado em `app/utils/rate_limit.py`, por chave Redis:
 | `register` | 5 | 1 h |
 | `forgot-password` | 5 | 1 h |
 | `resend-verification` | 5 | 1 h |
-| Códigos (verify/reset) | 5 tentativas | TTL do código |
+| `change-email` (request) | 5 | 1 h |
+| `change-password` (request) | 5 | 1 h |
+| Códigos (verify/reset/change) | 5 tentativas | TTL do código |
 
 Login bem-sucedido zera o contador. Se o Redis estiver fora, o rate limit cai aberto (consistente com a decisão de tratar Redis como cache).
 
@@ -591,7 +607,18 @@ Um loop único (iniciado no lifespan, intervalo de `DAILY_REMINDER_CHECK_MINUTES
 
 ### Lembrete diário (`daily_reminder`)
 
-Para cada usuário com hábitos, converte o relógio para o **fuso do usuário** (`User.timezone`) e, se já passou de `DAILY_REMINDER_HOUR` (default 12h), há hábito agendado para o dia da semana e **nenhuma entry saiu de `pending`**, cria a notificação persistida + push WS. **No máximo 1 por dia local** — o dedupe é garantido pelo banco (busca por `daily_reminder` criado desde a meia-noite local), então sobrevive a restarts e instâncias duplicadas.
+Para cada usuário com hábitos, converte o relógio para o **fuso do usuário** (`User.timezone`) e, se já passou de `DAILY_REMINDER_HOUR` (default 12h), há hábito agendado para o dia da semana e **nenhuma entry saiu de `pending`**, cria a notificação persistida + push WS. **No máximo 1 por dia local** — o dedupe é garantido pelo banco (`daily_reminder` já criado desde a meia-noite local do usuário), então sobrevive a restarts e instâncias duplicadas.
+
+**Consultas em lote (sem N+1).** O ciclo não faz query por usuário. O fluxo é:
+
+1. Carrega `(User, Habit)` num único `JOIN` e monta os hábitos por usuário em memória.
+2. Filtra os **candidatos** em memória (passou da hora + tem hábito agendado hoje no fuso de cada um) — sem tocar no banco.
+3. Para todos os candidatos de uma vez, **duas queries agregadas**:
+   - *Atividade de hoje* — `HabitEntry` com `status != pending` nas datas locais candidatas (`WHERE owner_user_id IN (...) AND entry_date IN (...)`, `DISTINCT`); o resultado é casado com o "hoje" do fuso de cada usuário.
+   - *Já lembrado hoje* — `MAX(created_at)` agrupado por `user_id` (`GROUP BY`) numa janela de 48h (cobre a meia-noite local de UTC−12 a UTC+14), comparado por usuário contra a sua meia-noite local.
+4. Acumula as notificações restantes e faz **um único `commit`**; os pushes WS são disparados depois do commit.
+
+Assim o custo por ciclo é **O(1) em número de queries** (3 no total) em vez de `2×N`, o que mantém o banco estável conforme a base de usuários cresce. Os índices em `notifications.user_id`, `habits.owner_user_id` e `habit_entries.habit_id` servem essas buscas.
 
 ### Limpeza por retenção
 
@@ -633,3 +660,23 @@ Se o Redis estiver indisponível no startup, o sistema continua com `NullRedis`,
 - Login de usuários já verificados, tarefas, grupos, hábitos e WS continuam funcionando
 - Rate limit fica aberto; logout não revoga refresh imediatamente; detecção de reuso de refresh fica cega (mas o `pwd_changed_at` do reset ainda revoga sessões via DB)
 - Cache de notificações desligado (toda leitura vai ao banco); pub/sub desligado (push só na própria instância); jobs rodam sem lock (seguro apenas com instância única)
+
+### Circuit breaker
+
+Mesmo conectado no startup, o Redis pode cair em tempo de execução. Para não martelar uma dependência já indisponível (cada comando esperando um timeout de conexão e somando latência a toda requisição), o acesso ao Redis passa por um **circuit breaker** (`app/utils/circuit_breaker.py`, embrulhando o cliente em `app/config/redis_client.py`).
+
+Estados:
+
+- **closed** (normal) — comandos passam; falhas consecutivas são contadas.
+- **open** — após **5 falhas** o circuito abre por **30s** e as chamadas são **curto-circuitadas** (caem direto no fallback, sem tocar no Redis).
+- **half-open** — passado o cooldown, **uma sonda** é liberada: se tem sucesso o circuito fecha; se falha, reabre por mais 30s.
+
+O breaker respeita a mesma política de degradação do resto do sistema:
+
+| Acesso | Circuito aberto |
+| --- | --- |
+| `get_redis()` (best-effort: cache, rate limit, pub/sub) | retorna `NullRedis` — degrada sem erro |
+| `require_redis()` (fail-closed: OTPs de email/senha) | `503 SERVICE_UNAVAILABLE` imediato, sem esperar timeout |
+| `is_redis_available()` (probes de WS/cache) | `false` durante o cooldown — backoff natural |
+
+Quando o Redis volta, a sonda do half-open fecha o circuito sozinho — sem restart. Os limiares (5 falhas / 30s) ficam em constantes no topo de `redis_client.py`.

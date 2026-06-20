@@ -44,6 +44,49 @@ class EmailService:
         except Exception:
             logger.exception("Falha ao enviar aviso de conta existente para %s", to)
 
+    async def send_email_change_code(self, to: str, code: str) -> None:
+        subject = "Confirme seu novo email — To-Do List"
+        body = f"""
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+          <h2>Confirme seu novo email</h2>
+          <p>Use o código abaixo para confirmar a alteração do email da sua conta.
+             Ele expira em <strong>10 minutos</strong>.</p>
+          <div style="font-size:2.5rem;font-weight:bold;letter-spacing:0.5rem;text-align:center;
+                      padding:1.5rem;background:#f4f4f5;border-radius:8px;margin:1.5rem 0">
+            {code}
+          </div>
+          <p style="color:#71717a;font-size:0.85rem">Se você não solicitou esta alteração, ignore este email.</p>
+        </div>
+        """
+        try:
+            await send_email(subject=subject, recipients=[to], body=body)
+            logger.info("Email de troca de email enviado para %s", to)
+        except Exception:
+            logger.exception("Falha ao enviar email de troca de email para %s", to)
+            raise
+
+    async def send_password_change_code(self, to: str, code: str) -> None:
+        subject = "Confirme a alteração de senha — To-Do List"
+        body = f"""
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+          <h2>Confirme a alteração de senha</h2>
+          <p>Use o código abaixo para confirmar a alteração da senha da sua conta.
+             Ele expira em <strong>10 minutos</strong>.</p>
+          <div style="font-size:2.5rem;font-weight:bold;letter-spacing:0.5rem;text-align:center;
+                      padding:1.5rem;background:#f4f4f5;border-radius:8px;margin:1.5rem 0">
+            {code}
+          </div>
+          <p style="color:#71717a;font-size:0.85rem">Se você não solicitou esta alteração,
+             troque sua senha imediatamente.</p>
+        </div>
+        """
+        try:
+            await send_email(subject=subject, recipients=[to], body=body)
+            logger.info("Email de troca de senha enviado para %s", to)
+        except Exception:
+            logger.exception("Falha ao enviar email de troca de senha para %s", to)
+            raise
+
     async def send_email_verification_code(self, to: str, code: str) -> None:
         subject = "Confirme seu email — To-Do List"
         body = f"""

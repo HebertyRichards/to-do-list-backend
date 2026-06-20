@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import json
 import logging
 import secrets as _secrets
 import uuid
@@ -16,6 +17,10 @@ from app.errors import AppException, ErrorCode
 from app.models import Group, GroupMember, User
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth_schemas import (
+    ChangeEmailConfirmInput,
+    ChangeEmailRequestInput,
+    ChangePasswordConfirmInput,
+    ChangePasswordRequestInput,
     CurrentUser,
     DeleteAccountInput,
     ForgotPasswordInput,
@@ -49,6 +54,7 @@ logger = logging.getLogger(__name__)
 
 _RESET_TTL = 600
 _VERIFY_TTL = 3600
+_CHANGE_TTL = 600
 _REFRESH_DENYLIST_TTL = 30 * 24 * 60 * 60
 
 
@@ -315,6 +321,102 @@ class AuthService:
                 uid,
                 {"type": "group_deleted", "group_slug": slug, "group_name": name},
             )
+
+    async def request_email_change(
+        self, user: User, data: ChangeEmailRequestInput, background_tasks: BackgroundTasks
+    ) -> None:
+        await rate_limit.enforce_and_increment(
+            f"rl:change_email:{user.id}",
+            rate_limit.CHANGE_EMAIL_MAX_ATTEMPTS,
+            rate_limit.CHANGE_EMAIL_WINDOW_SECONDS,
+        )
+
+        if not verify_password(data.password, user.hashed_password):
+            raise AppException(ErrorCode.INVALID_CREDENTIALS)
+
+        new_email = data.new_email
+        if new_email == user.email:
+            raise AppException(ErrorCode.EMAIL_ALREADY_REGISTERED)
+        if await self.users.get_by_email(new_email) is not None:
+            raise AppException(ErrorCode.EMAIL_ALREADY_REGISTERED)
+
+        code = _make_code()
+        redis = await require_redis()
+        payload = json.dumps({"code": _hash_code(code), "email": new_email})
+        await redis.setex(f"email_change:{user.id}", _CHANGE_TTL, payload)
+
+        background_tasks.add_task(self.email.send_email_change_code, new_email, code)
+
+    async def confirm_email_change(self, user: User, data: ChangeEmailConfirmInput) -> CurrentUser:
+        attempts_key = f"rl:change_email_code:{user.id}"
+        await rate_limit.check_only(attempts_key, rate_limit.CHANGE_EMAIL_CODE_MAX_ATTEMPTS)
+
+        redis = await require_redis()
+        stored = await redis.get(f"email_change:{user.id}")
+        if stored is None:
+            raise AppException(ErrorCode.VERIFY_CODE_EXPIRED)
+
+        raw = stored if isinstance(stored, str) else stored.decode()
+        info = json.loads(raw)
+        if not hmac.compare_digest(info["code"], _hash_code(data.code)):
+            await rate_limit.increment_on_failure(attempts_key, _CHANGE_TTL)
+            raise AppException(ErrorCode.VERIFY_CODE_INVALID)
+
+        new_email = info["email"]
+        existing = await self.users.get_by_email(new_email)
+        if existing is not None and existing.id != user.id:
+            await redis.delete(f"email_change:{user.id}")
+            raise AppException(ErrorCode.EMAIL_ALREADY_REGISTERED)
+
+        await redis.delete(f"email_change:{user.id}")
+        await rate_limit.clear(attempts_key)
+        user.email = new_email
+        await self.db.commit()
+        return CurrentUser.model_validate(user)
+
+    async def request_password_change(
+        self, user: User, data: ChangePasswordRequestInput, background_tasks: BackgroundTasks
+    ) -> None:
+        await rate_limit.enforce_and_increment(
+            f"rl:change_pwd:{user.id}",
+            rate_limit.CHANGE_PASSWORD_MAX_ATTEMPTS,
+            rate_limit.CHANGE_PASSWORD_WINDOW_SECONDS,
+        )
+
+        if not verify_password(data.current_password, user.hashed_password):
+            raise AppException(ErrorCode.INVALID_CREDENTIALS)
+
+        code = _make_code()
+        redis = await require_redis()
+        # Guardamos o hash da nova senha (já cifrado) com TTL curto; nunca a senha em claro.
+        payload = json.dumps({"code": _hash_code(code), "hash": hash_password(data.new_password)})
+        await redis.setex(f"pwd_change:{user.id}", _CHANGE_TTL, payload)
+
+        background_tasks.add_task(self.email.send_password_change_code, user.email, code)
+
+    async def confirm_password_change(
+        self, user: User, data: ChangePasswordConfirmInput, response: Response
+    ) -> None:
+        attempts_key = f"rl:change_pwd_code:{user.id}"
+        await rate_limit.check_only(attempts_key, rate_limit.CHANGE_PASSWORD_CODE_MAX_ATTEMPTS)
+
+        redis = await require_redis()
+        stored = await redis.get(f"pwd_change:{user.id}")
+        if stored is None:
+            raise AppException(ErrorCode.VERIFY_CODE_EXPIRED)
+
+        raw = stored if isinstance(stored, str) else stored.decode()
+        info = json.loads(raw)
+        if not hmac.compare_digest(info["code"], _hash_code(data.code)):
+            await rate_limit.increment_on_failure(attempts_key, _CHANGE_TTL)
+            raise AppException(ErrorCode.VERIFY_CODE_INVALID)
+
+        await redis.delete(f"pwd_change:{user.id}")
+        await rate_limit.clear(attempts_key)
+        user.hashed_password = info["hash"]
+        user.pwd_changed_at = datetime.now(timezone.utc)
+        clear_auth_cookies(response)
+        await self.db.commit()
 
     async def logout(self, request: Request, response: Response) -> None:
         refresh_token = request.cookies.get(REFRESH_COOKIE)

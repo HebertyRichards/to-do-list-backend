@@ -79,6 +79,36 @@ class DeleteAccountInput(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class ChangeEmailRequestInput(BaseModel):
+    new_email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
+
+
+class ChangeEmailConfirmInput(BaseModel):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class ChangePasswordRequestInput(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+    confirm_new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_strength(cls, v: str) -> str:
+        return _validate_password(v)
+
+    @model_validator(mode="after")
+    def _passwords_match(self) -> "ChangePasswordRequestInput":
+        if self.new_password != self.confirm_new_password:
+            raise ValueError("As senhas não coincidem")
+        return self
+
+
+class ChangePasswordConfirmInput(BaseModel):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
 class ResetPasswordInput(BaseModel):
     email: EmailStr
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
