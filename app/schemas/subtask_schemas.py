@@ -12,6 +12,7 @@ class SubtaskCreate(BaseModel):
     start_date: datetime
     due_date: datetime
     assignee_username: str | None = None
+    is_urgent: bool = False
 
     @model_validator(mode="after")
     def _check_dates(self):
@@ -26,6 +27,7 @@ class SubtaskUpdate(BaseModel):
     start_date: datetime | None = None
     due_date: datetime | None = None
     status: TaskStatus | None = None
+    is_urgent: bool | None = None
     assignee_username: str | None = Field(
         default=None,
         description="Omita ou envie null para não alterar. Envie string vazia para desatribuir.",
@@ -38,6 +40,8 @@ class SubtaskOut(BaseModel):
     title: str
     description: str | None
     status: TaskStatus
+    is_urgent: bool
+    is_overdue: bool
     start_date: datetime
     due_date: datetime
     created_at: datetime

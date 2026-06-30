@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import Depends
 from sqlalchemy import select
@@ -60,6 +61,7 @@ class TaskService:
             owner_user_id=None if cat.group_id else user.id,
             group_id=cat.group_id,
             assignee_user_id=assignee_user_id,
+            is_urgent=data.is_urgent,
             tags=tags,
         )
         task = await self.repo.create(task)
@@ -101,7 +103,18 @@ class TaskService:
         if data.due_date is not None:
             task.due_date = data.due_date
         if data.status is not None:
+            crosses_done_boundary = (
+                data.status != task.status
+                and TaskStatus.done in (data.status, task.status)
+            )
+            if crosses_done_boundary and user.id not in (
+                task.creator_user_id,
+                task.assignee_user_id,
+            ):
+                raise AppException(ErrorCode.COMPLETE_NOT_ALLOWED)
             task.status = data.status
+        if data.is_urgent is not None:
+            task.is_urgent = data.is_urgent
         if data.category_slug is not None:
             new_cat = await self.cats.get_by_slug(data.category_slug)
             if not new_cat:
@@ -226,11 +239,17 @@ class TaskService:
     def _task_out(task: Task) -> TaskOut:
         subtasks = task.subtasks
         done_count = sum(1 for s in subtasks if s.status == TaskStatus.done)
+        is_overdue = (
+            task.status not in (TaskStatus.done, TaskStatus.archived)
+            and task.due_date < datetime.now(timezone.utc)
+        )
         return TaskOut(
             slug=task.slug,
             title=task.title,
             description=task.description,
             status=task.status,
+            is_urgent=task.is_urgent,
+            is_overdue=is_overdue,
             start_date=task.start_date,
             due_date=task.due_date,
             created_at=task.created_at,

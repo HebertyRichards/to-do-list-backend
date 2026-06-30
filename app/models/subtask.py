@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,6 +21,10 @@ class Subtask(Base, TimestampMixin):
         Enum(TaskStatus, name="task_status", create_type=False),
         default=TaskStatus.pending,
         nullable=False,
+    )
+
+    is_urgent: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
     )
 
     start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

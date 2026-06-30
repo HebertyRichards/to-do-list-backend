@@ -21,6 +21,7 @@ class TaskBase(BaseModel):
 class TaskCreate(TaskBase):
     category_slug: str
     assignee_username: str | None = None
+    is_urgent: bool = False
     tag_names: list[str] = Field(default_factory=list)
 
 
@@ -30,6 +31,7 @@ class TaskUpdate(BaseModel):
     start_date: datetime | None = None
     due_date: datetime | None = None
     status: TaskStatus | None = None
+    is_urgent: bool | None = None
     category_slug: str | None = None
     assignee_username: str | None = Field(
         default=None,
@@ -48,6 +50,8 @@ class TaskOut(BaseModel):
     title: str
     description: str | None
     status: TaskStatus
+    is_urgent: bool
+    is_overdue: bool
     start_date: datetime
     due_date: datetime
     created_at: datetime

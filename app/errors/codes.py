@@ -24,6 +24,7 @@ class ErrorCode(str, Enum):
     NOT_GROUP_ADMIN = "NOT_GROUP_ADMIN"
     NOT_GROUP_MEMBER = "NOT_GROUP_MEMBER"
     NOT_TASK_OWNER = "NOT_TASK_OWNER"
+    COMPLETE_NOT_ALLOWED = "COMPLETE_NOT_ALLOWED"
 
     NOT_FOUND = "NOT_FOUND"
     USER_NOT_FOUND = "USER_NOT_FOUND"
@@ -77,6 +78,7 @@ ERROR_CATALOG: dict[ErrorCode, ErrorSpec] = {
     ErrorCode.NOT_GROUP_ADMIN: ErrorSpec("NOT_GROUP_ADMIN", 403, "Apenas o administrador do grupo pode executar esta acao."),
     ErrorCode.NOT_GROUP_MEMBER: ErrorSpec("NOT_GROUP_MEMBER", 403, "Voce nao pertence a este grupo."),
     ErrorCode.NOT_TASK_OWNER: ErrorSpec("NOT_TASK_OWNER", 403, "Voce nao pode editar esta tarefa."),
+    ErrorCode.COMPLETE_NOT_ALLOWED: ErrorSpec("COMPLETE_NOT_ALLOWED", 403, "Apenas o criador ou o responsavel podem concluir ou reabrir."),
 
     ErrorCode.NOT_FOUND: ErrorSpec("NOT_FOUND", 404, "Recurso nao encontrado."),
     ErrorCode.USER_NOT_FOUND: ErrorSpec("USER_NOT_FOUND", 404, "Usuario nao encontrado."),

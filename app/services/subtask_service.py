@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +8,7 @@ from app.config.database import get_db
 from app.errors import AppException, ErrorCode
 from app.models import Notification, Subtask, Task, User
 from app.models.notification import NotificationType
+from app.models.task import TaskStatus
 from app.repositories.group_repository import GroupRepository
 from app.repositories.notification_repository import NotificationRepository
 from app.repositories.subtask_repository import SubtaskRepository
@@ -49,6 +51,7 @@ class SubtaskService:
             due_date=data.due_date,
             creator_user_id=user.id,
             assignee_user_id=assignee_user_id,
+            is_urgent=data.is_urgent,
         )
         subtask = await self.repo.create(subtask)
 
@@ -81,7 +84,18 @@ class SubtaskService:
         if data.due_date is not None:
             subtask.due_date = data.due_date
         if data.status is not None:
+            crosses_done_boundary = (
+                data.status != subtask.status
+                and TaskStatus.done in (data.status, subtask.status)
+            )
+            if crosses_done_boundary and user.id not in (
+                subtask.creator_user_id,
+                subtask.assignee_user_id,
+            ):
+                raise AppException(ErrorCode.COMPLETE_NOT_ALLOWED)
             subtask.status = data.status
+        if data.is_urgent is not None:
+            subtask.is_urgent = data.is_urgent
 
         previous_assignee = subtask.assignee_user_id
         if data.assignee_username is not None:
@@ -167,12 +181,18 @@ class SubtaskService:
 
     @staticmethod
     def _subtask_out(subtask: Subtask) -> SubtaskOut:
+        is_overdue = (
+            subtask.status not in (TaskStatus.done, TaskStatus.archived)
+            and subtask.due_date < datetime.now(timezone.utc)
+        )
         return SubtaskOut(
             slug=subtask.slug,
             task_slug=subtask.task.slug,
             title=subtask.title,
             description=subtask.description,
             status=subtask.status,
+            is_urgent=subtask.is_urgent,
+            is_overdue=is_overdue,
             start_date=subtask.start_date,
             due_date=subtask.due_date,
             created_at=subtask.created_at,
