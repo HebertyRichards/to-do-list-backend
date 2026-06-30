@@ -1,15 +1,15 @@
 """init
 
-Revision ID: 20ae144b9949
+Revision ID: 2c1f4f53bbdb
 Revises: 
-Create Date: 2026-05-27 22:04:23.381135
+Create Date: 2026-06-29 23:03:43.860951
 
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = '20ae144b9949'
+revision = '2c1f4f53bbdb'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -23,6 +23,7 @@ def upgrade() -> None:
     sa.Column('username', sa.String(length=60), nullable=False),
     sa.Column('hashed_password', sa.String(length=255), nullable=False),
     sa.Column('avatar_url', sa.String(length=500), nullable=True),
+    sa.Column('timezone', sa.String(length=64), server_default='UTC', nullable=False),
     sa.Column('onboarded', sa.Boolean(), nullable=False),
     sa.Column('verified_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('pwd_changed_at', sa.DateTime(timezone=True), nullable=True),
@@ -49,10 +50,28 @@ def upgrade() -> None:
     op.create_index(op.f('ix_app_groups_admin_user_id'), 'groups', ['admin_user_id'], unique=False, schema='app')
     op.create_index(op.f('ix_app_groups_key_hash'), 'groups', ['key_hash'], unique=True, schema='app')
     op.create_index(op.f('ix_app_groups_slug'), 'groups', ['slug'], unique=True, schema='app')
+    op.create_table('habits',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('slug', sa.String(length=16), nullable=False),
+    sa.Column('title', sa.String(length=180), nullable=False),
+    sa.Column('description', sa.Text(), nullable=True),
+    sa.Column('every_day', sa.Boolean(), nullable=False),
+    sa.Column('days_mask', sa.SmallInteger(), nullable=False),
+    sa.Column('owner_user_id', sa.UUID(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint('days_mask >= 1 AND days_mask <= 127', name='ck_habit_days_mask_range'),
+    sa.CheckConstraint('every_day = false OR days_mask = 127', name='ck_habit_every_day_mask'),
+    sa.ForeignKeyConstraint(['owner_user_id'], ['accounts.users.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id'),
+    schema='app'
+    )
+    op.create_index(op.f('ix_app_habits_owner_user_id'), 'habits', ['owner_user_id'], unique=False, schema='app')
+    op.create_index(op.f('ix_app_habits_slug'), 'habits', ['slug'], unique=True, schema='app')
     op.create_table('notifications',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.UUID(), nullable=False),
-    sa.Column('type', sa.Enum('join_request_created', 'join_request_accepted', 'join_request_rejected', 'task_assigned', 'subtask_assigned', 'member_removed', 'group_deleted', name='notification_type'), nullable=False),
+    sa.Column('type', sa.Enum('join_request_created', 'join_request_accepted', 'join_request_rejected', 'task_assigned', 'subtask_assigned', 'member_removed', 'group_deleted', 'daily_reminder', name='notification_type'), nullable=False),
     sa.Column('title', sa.String(length=180), nullable=False),
     sa.Column('payload', sa.JSON(), nullable=False),
     sa.Column('read_at', sa.DateTime(timezone=True), nullable=True),
@@ -95,6 +114,19 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_app_group_members_group_id'), 'group_members', ['group_id'], unique=False, schema='app')
     op.create_index(op.f('ix_app_group_members_user_id'), 'group_members', ['user_id'], unique=False, schema='app')
+    op.create_table('habit_entries',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('habit_id', sa.Integer(), nullable=False),
+    sa.Column('entry_date', sa.Date(), nullable=False),
+    sa.Column('status', sa.Enum('pending', 'in_progress', 'done', name='habit_status'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.ForeignKeyConstraint(['habit_id'], ['app.habits.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('habit_id', 'entry_date', name='uq_habit_entry_date'),
+    schema='app'
+    )
+    op.create_index(op.f('ix_app_habit_entries_habit_id'), 'habit_entries', ['habit_id'], unique=False, schema='app')
     op.create_table('join_requests',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('slug', sa.String(length=16), nullable=False),
@@ -137,7 +169,8 @@ def upgrade() -> None:
     sa.Column('slug', sa.String(length=16), nullable=False),
     sa.Column('title', sa.String(length=180), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
-    sa.Column('status', sa.Enum('pending', 'in_progress', 'done', 'archived', name='task_status'), nullable=False),
+    sa.Column('status', sa.Enum('pending', 'in_progress', 'done', name='task_status'), nullable=False),
+    sa.Column('is_urgent', sa.Boolean(), server_default='false', nullable=False),
     sa.Column('start_date', sa.DateTime(timezone=True), nullable=False),
     sa.Column('due_date', sa.DateTime(timezone=True), nullable=False),
     sa.Column('category_id', sa.Integer(), nullable=False),
@@ -168,7 +201,8 @@ def upgrade() -> None:
     sa.Column('slug', sa.String(length=16), nullable=False),
     sa.Column('title', sa.String(length=180), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
-    sa.Column('status', sa.Enum('pending', 'in_progress', 'done', 'archived', name='task_status'), nullable=False),
+    sa.Column('status', sa.Enum('pending', 'in_progress', 'done', name='task_status'), nullable=False),
+    sa.Column('is_urgent', sa.Boolean(), server_default='false', nullable=False),
     sa.Column('start_date', sa.DateTime(timezone=True), nullable=False),
     sa.Column('due_date', sa.DateTime(timezone=True), nullable=False),
     sa.Column('task_id', sa.Integer(), nullable=False),
@@ -221,6 +255,8 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_app_join_requests_slug'), table_name='join_requests', schema='app')
     op.drop_index(op.f('ix_app_join_requests_group_id'), table_name='join_requests', schema='app')
     op.drop_table('join_requests', schema='app')
+    op.drop_index(op.f('ix_app_habit_entries_habit_id'), table_name='habit_entries', schema='app')
+    op.drop_table('habit_entries', schema='app')
     op.drop_index(op.f('ix_app_group_members_user_id'), table_name='group_members', schema='app')
     op.drop_index(op.f('ix_app_group_members_group_id'), table_name='group_members', schema='app')
     op.drop_table('group_members', schema='app')
@@ -230,6 +266,9 @@ def downgrade() -> None:
     op.drop_table('categories', schema='app')
     op.drop_index(op.f('ix_app_notifications_user_id'), table_name='notifications', schema='app')
     op.drop_table('notifications', schema='app')
+    op.drop_index(op.f('ix_app_habits_slug'), table_name='habits', schema='app')
+    op.drop_index(op.f('ix_app_habits_owner_user_id'), table_name='habits', schema='app')
+    op.drop_table('habits', schema='app')
     op.drop_index(op.f('ix_app_groups_slug'), table_name='groups', schema='app')
     op.drop_index(op.f('ix_app_groups_key_hash'), table_name='groups', schema='app')
     op.drop_index(op.f('ix_app_groups_admin_user_id'), table_name='groups', schema='app')

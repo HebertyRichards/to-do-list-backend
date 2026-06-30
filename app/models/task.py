@@ -14,7 +14,6 @@ class TaskStatus(str, enum.Enum):
     pending = "pending"
     in_progress = "in_progress"
     done = "done"
-    archived = "archived"
 
 
 class Task(Base, TimestampMixin):

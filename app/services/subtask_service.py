@@ -182,7 +182,7 @@ class SubtaskService:
     @staticmethod
     def _subtask_out(subtask: Subtask) -> SubtaskOut:
         is_overdue = (
-            subtask.status not in (TaskStatus.done, TaskStatus.archived)
+            subtask.status != TaskStatus.done
             and subtask.due_date < datetime.now(timezone.utc)
         )
         return SubtaskOut(

@@ -240,7 +240,7 @@ class TaskService:
         subtasks = task.subtasks
         done_count = sum(1 for s in subtasks if s.status == TaskStatus.done)
         is_overdue = (
-            task.status not in (TaskStatus.done, TaskStatus.archived)
+            task.status != TaskStatus.done
             and task.due_date < datetime.now(timezone.utc)
         )
         return TaskOut(
