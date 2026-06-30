@@ -371,6 +371,18 @@ seu-dominio.com {
 
 **Desatribuir assignee**: envie `{"assignee_username": ""}` (string vazia). Omitir o campo ou enviar `null` significa "não alterar".
 
+**Status (`task_status`)** — enum de 3 estados, igual para tarefas e subtarefas:
+
+| Valor | Significado |
+|---|---|
+| `pending` | Pendente — aguardando / reaberta |
+| `in_progress` | Em progresso — alguém está trabalhando nela |
+| `done` | Finalizado — entregue |
+
+- **Reabrir**: enviar `{"status": "pending"}` numa tarefa `done` a reabre. Tanto **finalizar** quanto **reabrir** cruzam a fronteira de `done` e, por isso, só são permitidos ao **criador** ou ao **assignee** (`ErrorCode.COMPLETE_NOT_ALLOWED` caso contrário).
+- **Urgente** (`is_urgent`, boolean, default `false`) — marca a tarefa/subtarefa como prioritária; é só um sinalizador, não altera o status. Editável no `PATCH`.
+- **Atraso** (`is_overdue`) — campo **somente leitura** calculado na resposta: `True` quando `status != done` e `due_date` já passou (UTC). Não é persistido nem editável.
+
 ### Categorias — `/categories`
 
 | Método | Path | Auth | Descrição |
