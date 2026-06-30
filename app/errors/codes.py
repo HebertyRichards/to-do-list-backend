@@ -34,6 +34,7 @@ class ErrorCode(str, Enum):
     CATEGORY_NOT_FOUND = "CATEGORY_NOT_FOUND"
     HABIT_NOT_FOUND = "HABIT_NOT_FOUND"
     JOIN_REQUEST_NOT_FOUND = "JOIN_REQUEST_NOT_FOUND"
+    COMMENT_NOT_FOUND = "COMMENT_NOT_FOUND"
 
     CONFLICT = "CONFLICT"
     EMAIL_ALREADY_REGISTERED = "EMAIL_ALREADY_REGISTERED"
@@ -88,6 +89,7 @@ ERROR_CATALOG: dict[ErrorCode, ErrorSpec] = {
     ErrorCode.CATEGORY_NOT_FOUND: ErrorSpec("CATEGORY_NOT_FOUND", 404, "Categoria nao encontrada."),
     ErrorCode.HABIT_NOT_FOUND: ErrorSpec("HABIT_NOT_FOUND", 404, "Habito nao encontrado."),
     ErrorCode.JOIN_REQUEST_NOT_FOUND: ErrorSpec("JOIN_REQUEST_NOT_FOUND", 404, "Solicitacao nao encontrada."),
+    ErrorCode.COMMENT_NOT_FOUND: ErrorSpec("COMMENT_NOT_FOUND", 404, "Comentario nao encontrado."),
 
     ErrorCode.CONFLICT: ErrorSpec("CONFLICT", 409, "Conflito de estado."),
     ErrorCode.EMAIL_ALREADY_REGISTERED: ErrorSpec("EMAIL_ALREADY_REGISTERED", 409, "Email ja cadastrado."),
