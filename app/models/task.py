@@ -2,7 +2,18 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,6 +41,22 @@ class Task(Base, TimestampMixin):
 
     is_urgent: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
+    )
+
+    position: Mapped[float] = mapped_column(
+        Float, default=0.0, server_default="0", nullable=False
+    )
+
+    # Timestamps de quando a tarefa entrou no estado atual de cada dimensão.
+    # Servem para calcular durações ("permaneceu N tempo") no log de atividade.
+    status_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    category_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    assignee_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -75,5 +102,6 @@ class Task(Base, TimestampMixin):
             "start_date <= due_date",
             name="ck_task_dates",
         ),
+        Index("ix_task_category_position", "category_id", "position"),
         {"schema": "app"},
     )

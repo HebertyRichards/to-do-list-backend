@@ -1,3 +1,4 @@
+from app.models.activity import Activity, ActivityType
 from app.models.base import Base
 from app.models.category import Category
 from app.models.comment import Comment
@@ -12,6 +13,8 @@ from app.models.task import Task
 from app.models.user import User
 
 __all__ = [
+    "Activity",
+    "ActivityType",
     "Base",
     "Category",
     "Comment",

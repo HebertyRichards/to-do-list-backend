@@ -17,6 +17,7 @@ from app.repositories.notification_repository import NotificationRepository
 from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.task_schemas import TagOut, TaskCreate, TaskOut, TaskUpdate
+from app.services.activity_recorder import ActivityRecorder, seconds_between
 from app.utils.security import generate_slug
 from app.ws.manager import notification_manager
 
@@ -28,6 +29,7 @@ class TaskService:
         self.cats = CategoryRepository(db)
         self.groups = GroupRepository(db)
         self.notifs = NotificationRepository(db)
+        self.activity = ActivityRecorder(db)
 
     async def create(self, user: User, data: TaskCreate) -> TaskOut:
         cat = await self.cats.get_by_slug(data.category_slug)
@@ -50,6 +52,8 @@ class TaskService:
             group_id=cat.group_id,
         )
 
+        position = await self.repo.next_position(cat.id)
+
         task = Task(
             slug=generate_slug(),
             title=data.title,
@@ -62,9 +66,12 @@ class TaskService:
             group_id=cat.group_id,
             assignee_user_id=assignee_user_id,
             is_urgent=data.is_urgent,
+            position=position,
             tags=tags,
         )
         task = await self.repo.create(task)
+
+        self.activity.created(user.id, task_id=task.id)
 
         if assignee_user_id and assignee_user_id != user.id:
             await self._notify_assignee(task, assignee_user_id, user.username)
@@ -87,6 +94,7 @@ class TaskService:
 
     async def update(self, user: User, task_slug: str, data: TaskUpdate) -> TaskOut:
         task = await self._get_accessible(user, task_slug)
+        now = datetime.now(timezone.utc)
 
         if data.start_date or data.due_date:
             start = data.start_date or task.start_date
@@ -98,36 +106,82 @@ class TaskService:
             task.title = data.title
         if data.description is not None:
             task.description = data.description
-        if data.start_date is not None:
-            task.start_date = data.start_date
-        if data.due_date is not None:
-            task.due_date = data.due_date
-        if data.status is not None:
-            crosses_done_boundary = (
-                data.status != task.status
-                and TaskStatus.done in (data.status, task.status)
+        if data.start_date is not None or data.due_date is not None:
+            if data.start_date is not None:
+                task.start_date = data.start_date
+            if data.due_date is not None:
+                task.due_date = data.due_date
+            self.activity.dates_changed(
+                user.id, data.start_date, data.due_date, task_id=task.id
             )
+        if data.status is not None and data.status != task.status:
+            crosses_done_boundary = TaskStatus.done in (data.status, task.status)
             if crosses_done_boundary and user.id not in (
                 task.creator_user_id,
                 task.assignee_user_id,
             ):
                 raise AppException(ErrorCode.COMPLETE_NOT_ALLOWED)
+            held = None
+            held_username = None
+            if data.status == TaskStatus.done and task.assignee_user_id:
+                held = seconds_between(task.assignee_changed_at, now)
+                held_username = task.assignee.username if task.assignee else None
+            self.activity.status_changed(
+                user.id,
+                task.status,
+                data.status,
+                seconds_between(task.status_changed_at, now),
+                assignee_held_seconds=held,
+                assignee_username=held_username,
+                task_id=task.id,
+            )
             task.status = data.status
-        if data.is_urgent is not None:
+            task.status_changed_at = now
+        if data.is_urgent is not None and data.is_urgent != task.is_urgent:
             task.is_urgent = data.is_urgent
+            self.activity.urgent_changed(user.id, data.is_urgent, task_id=task.id)
         if data.category_slug is not None:
             new_cat = await self.cats.get_by_slug(data.category_slug)
             if not new_cat:
                 raise AppException(ErrorCode.CATEGORY_NOT_FOUND)
             self._assert_category_matches_task_scope(new_cat, task)
-            task.category_id = new_cat.id
+            if new_cat.id != task.category_id:
+                old_cat = task.category
+                self.activity.category_moved(
+                    user.id,
+                    from_slug=old_cat.slug,
+                    from_name=old_cat.name,
+                    to_slug=new_cat.slug,
+                    to_name=new_cat.name,
+                    duration_seconds=seconds_between(task.category_changed_at, now),
+                    task_id=task.id,
+                )
+                task.category_id = new_cat.id
+                task.category_changed_at = now
+                if data.position is None:
+                    task.position = await self.repo.next_position(new_cat.id)
+        if data.position is not None:
+            task.position = data.position
 
         previous_assignee = task.assignee_user_id
         if data.assignee_username is not None:
             new_assignee_id = await self._resolve_assignee(
                 data.assignee_username, group_id=task.group_id
             )
-            task.assignee_user_id = new_assignee_id
+            if new_assignee_id != previous_assignee:
+                self.activity.assignee_changed(
+                    user.id,
+                    task.assignee.username if task.assignee else None,
+                    data.assignee_username or None,
+                    prev_held_seconds=(
+                        seconds_between(task.assignee_changed_at, now)
+                        if previous_assignee
+                        else None
+                    ),
+                    task_id=task.id,
+                )
+                task.assignee_user_id = new_assignee_id
+                task.assignee_changed_at = now
 
         if data.tag_names is not None:
             task.tags = await self._resolve_or_create_tags(
@@ -250,11 +304,14 @@ class TaskService:
             status=task.status,
             is_urgent=task.is_urgent,
             is_overdue=is_overdue,
+            position=task.position,
             start_date=task.start_date,
             due_date=task.due_date,
             created_at=task.created_at,
             creator_username=task.creator.username,
             category_slug=task.category.slug,
+            category_name=task.category.name,
+            category_color=task.category.color,
             assignee_username=task.assignee.username if task.assignee else None,
             assignee_avatar_url=task.assignee.avatar_url if task.assignee else None,
             tags=[TagOut(name=t.name, color=t.color) for t in task.tags],

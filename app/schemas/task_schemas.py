@@ -32,6 +32,7 @@ class TaskUpdate(BaseModel):
     due_date: datetime | None = None
     status: TaskStatus | None = None
     is_urgent: bool | None = None
+    position: float | None = None
     category_slug: str | None = None
     assignee_username: str | None = Field(
         default=None,
@@ -52,11 +53,14 @@ class TaskOut(BaseModel):
     status: TaskStatus
     is_urgent: bool
     is_overdue: bool
+    position: float
     start_date: datetime
     due_date: datetime
     created_at: datetime
     creator_username: str
     category_slug: str
+    category_name: str
+    category_color: str | None = None
     assignee_username: str | None = None
     assignee_avatar_url: str | None = None
     tags: list[TagOut] = Field(default_factory=list)

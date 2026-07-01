@@ -3,12 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database import get_db
 from app.errors import AppException, ErrorCode
-from app.models import Comment, Subtask, Task, User
+from app.models import Activity, Comment, Subtask, Task, User
 from app.models.group_member import GroupRole
+from app.repositories.activity_repository import ActivityRepository
 from app.repositories.comment_repository import CommentRepository
 from app.repositories.group_repository import GroupRepository
 from app.repositories.subtask_repository import SubtaskRepository
 from app.repositories.task_repository import TaskRepository
+from app.schemas.activity_schemas import TimelineItemOut
 from app.schemas.comment_schemas import CommentCreate, CommentOut, CommentUpdate
 from app.utils.security import generate_slug
 
@@ -17,6 +19,7 @@ class CommentService:
     def __init__(self, db: AsyncSession = Depends(get_db)):
         self.db = db
         self.repo = CommentRepository(db)
+        self.activities = ActivityRepository(db)
         self.tasks = TaskRepository(db)
         self.subtasks = SubtaskRepository(db)
         self.groups = GroupRepository(db)
@@ -32,6 +35,61 @@ class CommentService:
         is_admin = await self._is_group_admin(user, subtask.task.group_id)
         comments = await self.repo.list_for_subtask(subtask.id)
         return [self._comment_out(c, user, is_admin) for c in comments]
+
+    async def timeline_for_task(self, user: User, task_slug: str) -> list[TimelineItemOut]:
+        task = await self._get_accessible_task(user, task_slug)
+        is_admin = await self._is_group_admin(user, task.group_id)
+        comments = await self.repo.list_for_task(task.id)
+        activities = await self.activities.list_for_task(task.id)
+        return self._merge_timeline(comments, activities, user, is_admin)
+
+    async def timeline_for_subtask(
+        self, user: User, subtask_slug: str
+    ) -> list[TimelineItemOut]:
+        subtask = await self._get_accessible_subtask(user, subtask_slug)
+        is_admin = await self._is_group_admin(user, subtask.task.group_id)
+        comments = await self.repo.list_for_subtask(subtask.id)
+        activities = await self.activities.list_for_subtask(subtask.id)
+        return self._merge_timeline(comments, activities, user, is_admin)
+
+    def _merge_timeline(
+        self,
+        comments: list[Comment],
+        activities: list[Activity],
+        user: User,
+        is_admin: bool,
+    ) -> list[TimelineItemOut]:
+        items = [self._comment_item(c, user, is_admin) for c in comments]
+        items += [self._activity_item(a) for a in activities]
+        items.sort(key=lambda i: i.created_at)
+        return items
+
+    @staticmethod
+    def _comment_item(comment: Comment, user: User, is_group_admin: bool) -> TimelineItemOut:
+        is_author = comment.author_user_id == user.id
+        return TimelineItemOut(
+            kind="comment",
+            slug=comment.slug,
+            created_at=comment.created_at,
+            actor_username=comment.author.username,
+            actor_avatar_url=comment.author.avatar_url,
+            body=comment.body,
+            updated_at=comment.updated_at,
+            can_edit=is_author,
+            can_delete=is_author or is_group_admin,
+        )
+
+    @staticmethod
+    def _activity_item(activity: Activity) -> TimelineItemOut:
+        return TimelineItemOut(
+            kind="activity",
+            slug=activity.slug,
+            created_at=activity.created_at,
+            actor_username=activity.actor.username,
+            actor_avatar_url=activity.actor.avatar_url,
+            type=activity.type,
+            payload=activity.payload,
+        )
 
     async def create_for_task(
         self, user: User, task_slug: str, data: CommentCreate

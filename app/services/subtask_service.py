@@ -15,6 +15,7 @@ from app.repositories.subtask_repository import SubtaskRepository
 from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.subtask_schemas import SubtaskCreate, SubtaskOut, SubtaskUpdate
+from app.services.activity_recorder import ActivityRecorder, seconds_between
 from app.utils.security import generate_slug
 from app.ws.manager import notification_manager
 
@@ -26,6 +27,7 @@ class SubtaskService:
         self.tasks = TaskRepository(db)
         self.groups = GroupRepository(db)
         self.notifs = NotificationRepository(db)
+        self.activity = ActivityRecorder(db)
 
     async def create(self, user: User, data: SubtaskCreate) -> SubtaskOut:
         task = await self.tasks.get_by_slug(data.task_slug)
@@ -55,6 +57,8 @@ class SubtaskService:
         )
         subtask = await self.repo.create(subtask)
 
+        self.activity.created(user.id, subtask_id=subtask.id)
+
         if assignee_user_id and assignee_user_id != user.id:
             await self._notify_assignee(subtask, task, assignee_user_id, user.username)
 
@@ -75,34 +79,65 @@ class SubtaskService:
 
     async def update(self, user: User, subtask_slug: str, data: SubtaskUpdate) -> SubtaskOut:
         subtask = await self._get_accessible(user, subtask_slug)
+        now = datetime.now(timezone.utc)
         if data.title is not None:
             subtask.title = data.title
         if data.description is not None:
             subtask.description = data.description
-        if data.start_date is not None:
-            subtask.start_date = data.start_date
-        if data.due_date is not None:
-            subtask.due_date = data.due_date
-        if data.status is not None:
-            crosses_done_boundary = (
-                data.status != subtask.status
-                and TaskStatus.done in (data.status, subtask.status)
+        if data.start_date is not None or data.due_date is not None:
+            if data.start_date is not None:
+                subtask.start_date = data.start_date
+            if data.due_date is not None:
+                subtask.due_date = data.due_date
+            self.activity.dates_changed(
+                user.id, data.start_date, data.due_date, subtask_id=subtask.id
             )
+        if data.status is not None and data.status != subtask.status:
+            crosses_done_boundary = TaskStatus.done in (data.status, subtask.status)
             if crosses_done_boundary and user.id not in (
                 subtask.creator_user_id,
                 subtask.assignee_user_id,
             ):
                 raise AppException(ErrorCode.COMPLETE_NOT_ALLOWED)
+            held = None
+            held_username = None
+            if data.status == TaskStatus.done and subtask.assignee_user_id:
+                held = seconds_between(subtask.assignee_changed_at, now)
+                held_username = subtask.assignee.username if subtask.assignee else None
+            self.activity.status_changed(
+                user.id,
+                subtask.status,
+                data.status,
+                seconds_between(subtask.status_changed_at, now),
+                assignee_held_seconds=held,
+                assignee_username=held_username,
+                subtask_id=subtask.id,
+            )
             subtask.status = data.status
-        if data.is_urgent is not None:
+            subtask.status_changed_at = now
+        if data.is_urgent is not None and data.is_urgent != subtask.is_urgent:
             subtask.is_urgent = data.is_urgent
+            self.activity.urgent_changed(user.id, data.is_urgent, subtask_id=subtask.id)
 
         previous_assignee = subtask.assignee_user_id
         if data.assignee_username is not None:
             new_assignee_id = await self._resolve_assignee(
                 data.assignee_username, group_id=subtask.task.group_id
             )
-            subtask.assignee_user_id = new_assignee_id
+            if new_assignee_id != previous_assignee:
+                self.activity.assignee_changed(
+                    user.id,
+                    subtask.assignee.username if subtask.assignee else None,
+                    data.assignee_username or None,
+                    prev_held_seconds=(
+                        seconds_between(subtask.assignee_changed_at, now)
+                        if previous_assignee
+                        else None
+                    ),
+                    subtask_id=subtask.id,
+                )
+                subtask.assignee_user_id = new_assignee_id
+                subtask.assignee_changed_at = now
 
         await self.db.flush()
         await self.db.refresh(subtask, ["creator", "assignee"])
