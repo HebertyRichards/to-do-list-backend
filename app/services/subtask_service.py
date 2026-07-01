@@ -77,6 +77,19 @@ class SubtaskService:
         subtasks = await self.repo.list_for_task(task.id)
         return [self._subtask_out(s) for s in subtasks]
 
+    async def list_user(self, user: User) -> list[SubtaskOut]:
+        subtasks = await self.repo.list_for_user(user.id)
+        return [self._subtask_out(s) for s in subtasks]
+
+    async def list_group(self, user: User, group_slug: str) -> list[SubtaskOut]:
+        group = await self.groups.get_by_slug(group_slug)
+        if not group:
+            raise AppException(ErrorCode.GROUP_NOT_FOUND)
+        if not await self.groups.get_member(group.id, user.id):
+            raise AppException(ErrorCode.NOT_GROUP_MEMBER)
+        subtasks = await self.repo.list_for_group(group.id)
+        return [self._subtask_out(s) for s in subtasks]
+
     async def update(self, user: User, subtask_slug: str, data: SubtaskUpdate) -> SubtaskOut:
         subtask = await self._get_accessible(user, subtask_slug)
         now = datetime.now(timezone.utc)

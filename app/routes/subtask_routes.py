@@ -13,6 +13,16 @@ async def create(data: SubtaskCreate, user: User = Depends(get_current_user), se
     return await service.create(user, data)
 
 
+@subtask_routes.get("", response_model=list[SubtaskOut])
+async def list_user(user: User = Depends(get_current_user), service: SubtaskService = Depends()):
+    return await service.list_user(user)
+
+
+@subtask_routes.get("/group/{group_slug}", response_model=list[SubtaskOut])
+async def list_group(group_slug: str, user: User = Depends(get_current_user), service: SubtaskService = Depends()):
+    return await service.list_group(user, group_slug)
+
+
 @subtask_routes.get("/task/{task_slug}", response_model=list[SubtaskOut])
 async def list_for_task(task_slug: str, user: User = Depends(get_current_user), service: SubtaskService = Depends()):
     return await service.list_for_task(user, task_slug)
