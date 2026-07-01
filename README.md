@@ -382,6 +382,8 @@ seu-dominio.com {
 - **Reabrir**: enviar `{"status": "pending"}` numa tarefa `done` a reabre. Tanto **finalizar** quanto **reabrir** cruzam a fronteira de `done` e, por isso, só são permitidos ao **criador** ou ao **assignee** (`ErrorCode.COMPLETE_NOT_ALLOWED` caso contrário).
 - **Urgente** (`is_urgent`, boolean, default `false`) — marca a tarefa/subtarefa como prioritária; é só um sinalizador, não altera o status. Editável no `PATCH`.
 - **Atraso** (`is_overdue`) — campo **somente leitura** calculado na resposta: `True` quando `status != done` e `due_date` já passou (UTC). Não é persistido nem editável.
+- **Categoria** — a resposta expõe `category_slug`, `category_name` e `category_color`. Para **mover** a tarefa para outra categoria, envie `{"category_slug": "..."}` no `PATCH`. A categoria destino precisa estar no **mesmo escopo** (mesmo grupo, ou mesmo dono no modo individual), senão `FORBIDDEN`. Ao mover sem `position` explícito, a tarefa vai para o **fim** da coluna destino.
+- **Ordenação (`position`)** — `float` que define a ordem da tarefa dentro da categoria (colunas do Kanban). As listagens vêm ordenadas por `position`. Para **reordenar / arrastar**, envie `{"position": <float>}` no `PATCH` (ex.: a média entre o vizinho de cima e o de baixo permite inserir "no meio" sem renumerar os outros).
 
 ### Categorias — `/categories`
 
@@ -398,9 +400,46 @@ seu-dominio.com {
 | Método | Path | Auth | Descrição |
 |---|---|---|---|
 | `POST` | `/subtasks` | ✓ | Criar subtarefa |
+| `GET` | `/subtasks` | ✓ | Listar todas as subtarefas do usuário (individuais) — para a visão "só subtarefas" |
+| `GET` | `/subtasks/group/{group_slug}` | ✓ membro | Listar todas as subtarefas do grupo |
 | `GET` | `/subtasks/task/{task_slug}` | ✓ | Listar subtarefas de uma tarefa |
 | `PATCH` | `/subtasks/{subtask_slug}` | ✓ | Atualizar subtarefa (suporta desatribuir via string vazia) |
 | `DELETE` | `/subtasks/{subtask_slug}` | ✓ | Deletar subtarefa |
+
+Subtarefas não têm categoria, tags nem `position` (isso é próprio da tarefa). `GET /subtasks` e `GET /subtasks/group/{slug}` existem para a visão de board filtrada por **tipo** (tarefas × subtarefas), já que a listagem por categoria só traz tarefas.
+
+### Comentários e timeline — `/comments`
+
+Qualquer pessoa com **acesso** ao item (membro do grupo, ou dono no modo individual) pode comentar em tarefas **e** subtarefas. Além dos comentários humanos, cada ação sobre a tarefa/subtarefa gera um **evento de sistema** imutável (log de atividade). A **timeline** é o feed unificado dos dois, ordenado por data.
+
+| Método | Path | Auth | Descrição |
+|---|---|---|---|
+| `POST` | `/comments/task/{task_slug}` | ✓ acesso | Comentar numa tarefa |
+| `POST` | `/comments/subtask/{subtask_slug}` | ✓ acesso | Comentar numa subtarefa |
+| `GET` | `/comments/task/{task_slug}` | ✓ acesso | Listar comentários da tarefa |
+| `GET` | `/comments/subtask/{subtask_slug}` | ✓ acesso | Listar comentários da subtarefa |
+| `GET` | `/comments/task/{task_slug}/timeline` | ✓ acesso | **Timeline** unificada da tarefa (comentários + eventos) |
+| `GET` | `/comments/subtask/{subtask_slug}/timeline` | ✓ acesso | **Timeline** unificada da subtarefa |
+| `PATCH` | `/comments/{comment_slug}` | ✓ autor | Editar comentário (só o autor) |
+| `DELETE` | `/comments/{comment_slug}` | ✓ autor ou admin | Excluir comentário (autor **ou** admin do grupo) |
+
+- **Permissões** — criar: qualquer um com acesso; editar: só o autor; excluir: autor ou admin do grupo. A resposta já traz `can_edit` / `can_delete` calculados para o usuário atual (evita vazar quem é admin e evita N+1).
+- **Item da timeline** — cada item tem `kind`: `"comment"` (com `body`, `updated_at`, `can_edit`, `can_delete`) ou `"activity"` (com `type` e `payload`). Ambos trazem `actor_username`, `actor_avatar_url` e `created_at`.
+
+**Tipos de evento (`activity_type`)** e o que o `payload` carrega:
+
+| `type` | Quando | `payload` |
+|---|---|---|
+| `created` | Tarefa/subtarefa criada | — |
+| `status_changed` | Mudança de status (não-`done`) | `from`, `to`, `duration_seconds` |
+| `delivered` | Status → `done` (entregue) | `from`, `to`, `duration_seconds`, `assignee_held_seconds`, `assignee_username` |
+| `reopened` | `done` → `pending` (reaberta) | `from`, `to`, `duration_seconds` |
+| `category_moved` | Movida de categoria (só task) | `from_slug`, `from_name`, `to_slug`, `to_name`, `duration_seconds` |
+| `assignee_changed` | Alocou / desalocou / trocou | `from`, `to`, `prev_held_seconds` |
+| `urgent_changed` | Alternou o flag urgente | `to` |
+| `dates_changed` | Alterou início/prazo | `start_date`, `due_date` |
+
+- **Durações** (`duration_seconds`, `assignee_held_seconds`, `prev_held_seconds`) são calculadas em **O(1)**: cada tarefa/subtarefa guarda `status_changed_at`, `assignee_changed_at` (e `category_changed_at` na tarefa) — o tempo no estado é `agora − <estado>_changed_at`. Não há varredura do log. Exemplos de leitura no front: "moveu de *X* para *Y* e permaneceu N tempo" (`category_moved.duration_seconds`); "entregou e segurou por N" (`delivered.assignee_held_seconds`).
 
 ### Hábitos diários — `/habits`
 
@@ -562,6 +601,8 @@ User ──< Notification
 
 Category ──< Task ──< Subtask
 Task >──< Tag  (many-to-many via task_tags)
+Task / Subtask ──< Comment      (comentários; XOR task_id/subtask_id)
+Task / Subtask ──< Activity     (log de eventos; XOR task_id/subtask_id)
 
 User ──< Habit ──< HabitEntry   (hábitos diários, só individual)
 ```
